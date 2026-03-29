@@ -1204,7 +1204,7 @@ const DockedDash = GObject.registerClass({
                 posY += this._monitor.height;
 
             this.x = workArea.x + Math.round((1 - fraction) / 2 * workArea.width);
-            this.y = posY;
+            this.y = posY + 6;
 
             if (extendHeight) {
                 this.dash._container.set_width(this.width);
