@@ -1811,6 +1811,10 @@ export class DockManager {
         return this._trash;
     }
 
+    get customApp() {
+        return this._customApp;
+    }
+
     get desktopIconsUsableArea() {
         return this._desktopIconsUsableArea;
     }
@@ -1855,6 +1859,11 @@ export class DockManager {
             this._trash.destroy();
             this._trash = null;
         }
+
+        // ── Custom App ──────────────────────────────────────────────
+        if (!this._customApp)
+            this._customApp = new Locations.CustomApp();
+        // ───────────────────────────────────────────────────────────
 
         Locations.unWrapFileManagerApp();
         [this._methodInjections, this._propertyInjections].forEach(
@@ -2560,6 +2569,8 @@ export class DockManager {
         this._appSpread.destroy();
         this._trash?.destroy();
         this._trash = null;
+        this._customApp?.destroy();
+        this._customApp = null;
         Locations.unWrapFileManagerApp();
         this._removables?.destroy();
         this._removables = null;

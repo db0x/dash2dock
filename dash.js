@@ -828,6 +828,14 @@ export const DockDash = GObject.registerClass({
             oldApps = oldApps.filter(app => !app.isTrash);
         }
 
+        // ── Custom App ──────────────────────────────────────────────
+        if (dockManager.customApp) {
+            const customApp = dockManager.customApp.getApp();
+            if (!newApps.includes(customApp))
+                newApps.push(customApp);
+        }
+        // ───────────────────────────────────────────────────────────
+
         // Temporary remove the separator so that we don't compute to position icons
         const oldSeparatorPos = this._box.get_children().indexOf(this._separator);
         if (this._separator)

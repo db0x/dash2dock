@@ -1350,6 +1350,46 @@ export class Trash {
     }
 }
 
+// ── Custom Icon ──────────────────────────────────────────────────────────────
+/**
+ * Hält ein Shell.App-Objekt für unser Custom Icon,
+ * analog zur Trash-Klasse – aber ohne eigene AppInfo-Subklasse.
+ */
+export class CustomApp {
+    destroy() {
+        this._app?.destroy();
+        this._app = null;
+    }
+
+    _ensureApp() {
+        if (this._app)
+            return;
+
+        const appInfo = new LocationAppInfo({
+            location: Gio.file_new_for_uri('file:///'),
+            name: 'Mein Icon',
+            icon: Gio.ThemedIcon.new('starred-symbolic'),
+            cancellable: new Gio.Cancellable(),
+        });
+
+        this._app = makeLocationApp({
+            appInfo,
+            fallbackIconName: 'starred-symbolic',
+        });
+
+        // Vorläufig keine Aktion bei Klick
+        this._app._mi('launch', () => {});
+        this._app._mi('open_new_window', () => {});
+        this._app._mi('can_open_new_window', () => false);
+    }
+
+    getApp() {
+        this._ensureApp();
+        return this._app;
+    }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * This class maintains Shell.App representations for removable devices
  * plugged into the system, and keeps the list of Apps up-to-date as
