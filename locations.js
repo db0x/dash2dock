@@ -1366,7 +1366,6 @@ export class CustomApp {
             return;
 
         const appInfo = new LocationAppInfo({
-            location: Gio.file_new_for_uri('file:///'),
             name: 'Mein Icon',
             icon: Gio.ThemedIcon.new('starred-symbolic'),
             cancellable: new Gio.Cancellable(),
@@ -1376,6 +1375,9 @@ export class CustomApp {
             appInfo,
             fallbackIconName: 'starred-symbolic',
         });
+
+        // Flag damit _redisplay() doppelte Einträge erkennt (analog zu isTrash)
+        this._app._setDtdData({isCustom: true}, {getter: true, enumerable: true});
 
         // Vorläufig keine Aktion bei Klick
         this._app._mi('launch', () => {});
