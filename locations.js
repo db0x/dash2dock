@@ -1,6 +1,7 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
 import {
+    Clutter,
     Gio,
     GioUnix,
     GLib,
@@ -9,9 +10,13 @@ import {
     St,
 } from './dependencies/gi.js';
 
-import {ShellMountOperation} from './dependencies/shell/ui.js';
+import {
+    Main,
+    ShellMountOperation,
+} from './dependencies/shell/ui.js';
 
 import {
+    AppIcons,
     Docking,
     Utils,
 } from './imports.js';
@@ -1351,12 +1356,158 @@ export class Trash {
 }
 
 // ── Custom Icon ──────────────────────────────────────────────────────────────
+// ── Custom Icon ──────────────────────────────────────────────────────────────
+
+/**
+ * Ein 4×4 Icon-Grid-Panel das über dem Dock erscheint,
+ * wenn auf unser Custom Icon geklickt wird.
+ * Ein 4×4 Icon-Grid-Panel das über dem Dock erscheint.
+ */
+class CustomIconPanel {
+    constructor(sourceActor, onClose) {
+        this._sourceActor = sourceActor;
+        this._onClose = onClose;
+
+        const mainDock = Docking.DockManager.getDefault().mainDock;
+        const tm = mainDock?._themeManager;
+        const iconSize = mainDock?.dash?.iconSize ?? 48;
+        this._iconSize = iconSize;
+
+        const style = tm?._customizedBackground
+            ? `background-color: rgba(83, 84, 84, 0.3);` +
+              `border: 1px solid rgba(0, 0, 0, 0.4);` +
+              `border-radius: 16px; padding: 12px;`
+            : 'border-radius: 16px; padding: 12px;';
+
+        this.actor = new St.BoxLayout({
+            style_class: 'dash-background',
+            style,
+            vertical: true,
+            reactive: true,
+            visible: false,
+            opacity: 0,
+        });
+
+        // Erste 16 installierte Apps holen
+        const apps = Shell.AppSystem.get_default()
+            .get_installed()
+            .filter(info => info.should_show())
+            .slice(0, 16)
+            .map(info => Shell.AppSystem.get_default().lookup_app(info.get_id()))
+            .filter(app => app !== null);
+
+        // Icons via mainDock._createAppItem() – identisch zum Dock
+        // (Hover-Effekt, Label, running-dots, alles inklusive)
+        const dash = mainDock.dash;
+        for (let row = 0; row < 4; row++) {
+            const rowBox = new St.BoxLayout({vertical: false});
+            for (let col = 0; col < 4; col++) {
+                const app = apps[row * 4 + col];
+                if (app) {
+                    const item = dash._createAppItem(app);
+                    item.show(false);
+                    rowBox.add_child(item);
+                } else {
+                    // Leerer Platzhalter
+                    rowBox.add_child(new St.Bin({width: iconSize + 16, height: iconSize + 16}));
+                }
+            }
+            this.actor.add_child(rowBox);
+        }
+
+        // Unsichtbar zur Stage hinzufügen um Größe zu berechnen
+        Main.uiGroup.add_child(this.actor);
+    }
+
+    open() {
+        this.isOpen = true;
+
+        // Position BEVOR show() – kein Flash oben links
+        // Größe explizit berechnen statt get_preferred_size() zu vertrauen
+        this.actor.ensure_style();
+        this._reposition();
+
+        this.actor.show();
+        this.actor.ease({opacity: 255, duration: 150, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+
+        // Handler erst im nächsten Frame registrieren – sonst schließt
+        // der aktuelle Click das Panel sofort wieder
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            if (!this.isOpen)
+                return GLib.SOURCE_REMOVE;
+            this._stageHandler = global.stage.connect('button-press-event',
+                (_actor, event) => {
+                    const [ex, ey] = event.get_coords();
+                    const [ax, ay] = this.actor.get_transformed_position();
+                    const aw = this.actor.get_width();
+                    const ah = this.actor.get_height();
+                    if (ex < ax || ex > ax + aw || ey < ay || ey > ay + ah)
+                        this.close();
+                    return Clutter.EVENT_PROPAGATE;
+                });
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _reposition() {
+        if (!this.actor || !this._sourceActor)
+            return;
+
+        const [stageX, stageY] = this._sourceActor.get_transformed_position();
+        const iconW = this._sourceActor.get_width();
+        const monitor = Main.layoutManager.findMonitorForActor(this._sourceActor);
+
+        // Explizite Größe: 4 Icons × (iconSize + 2×padding) + 2×panel-padding
+        const iconSize = this._iconSize;
+        const btnSize = iconSize + 16; // 8px padding each side
+        const panelPad = 24; // 12px padding each side
+        const panelW = 4 * btnSize + panelPad;
+        const panelH = 4 * btnSize + panelPad;
+
+        let panelX = Math.round(stageX + (iconW / 2) - (panelW / 2));
+        const panelY = Math.round(stageY - panelH - 8);
+
+        panelX = Math.max(monitor.x + 8,
+            Math.min(panelX, monitor.x + monitor.width - panelW - 8));
+
+        this.actor.set_position(panelX, panelY);
+    }
+
+    close() {
+        if (!this.isOpen)
+            return;
+        this.isOpen = false;
+        if (this._stageHandler) {
+            global.stage.disconnect(this._stageHandler);
+            this._stageHandler = null;
+        }
+        this._onClose?.();
+        this.actor?.ease({
+            opacity: 0,
+            duration: 100,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            onComplete: () => this.destroy(),
+        });
+    }
+
+    destroy() {
+        if (this._stageHandler) {
+            global.stage.disconnect(this._stageHandler);
+            this._stageHandler = null;
+        }
+        this.actor?.destroy();
+        this.actor = null;
+    }
+}
+
 /**
  * Hält ein Shell.App-Objekt für unser Custom Icon,
  * analog zur Trash-Klasse – aber ohne eigene AppInfo-Subklasse.
  */
 export class CustomApp {
     destroy() {
+        this._panel?.destroy();
+        this._panel = null;
         this._app?.destroy();
         this._app = null;
     }
@@ -1376,18 +1527,40 @@ export class CustomApp {
             fallbackIconName: 'starred-symbolic',
         });
 
-        // Flag damit _redisplay() doppelte Einträge erkennt (analog zu isTrash)
         this._app._setDtdData({isCustom: true}, {getter: true, enumerable: true});
 
-        // Vorläufig keine Aktion bei Klick
-        this._app._mi('launch', () => {});
-        this._app._mi('open_new_window', () => {});
         this._app._mi('can_open_new_window', () => false);
+        this._app._mi('open_new_window', () => {});
+
+        // activate() wird von launchNewWindow() aufgerufen wenn keine Fenster offen sind
+        const self = this;
+        this._app._mi('activate', () => {
+            if (self._sourceActor)
+                self.togglePanel(self._sourceActor);
+        });
     }
 
     getApp() {
         this._ensureApp();
         return this._app;
+    }
+
+    /**
+     * Wird vom AppIcon aufgerufen wenn auf das Icon geklickt wird.
+     * Öffnet/schließt das 4×4 Panel über dem Dock.
+     */
+    togglePanel(sourceActor) {
+        if (this._panel) {
+            this._panel.close();
+            this._panel = null;
+            return;
+        }
+
+        this._panel = new CustomIconPanel(sourceActor, () => {
+            // Callback wenn Panel sich selbst schließt
+            this._panel = null;
+        });
+        this._panel.open();
     }
 }
 // ─────────────────────────────────────────────────────────────────────────────

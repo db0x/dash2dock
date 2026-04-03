@@ -931,10 +931,10 @@ export const DockDash = GObject.registerClass({
                 item.destroy();
         }
 
-        // Update separator
+        // Update separator – deaktiviert
         const nFavorites = Object.keys(favorites).length;
         const nIcons = children.length + addedItems.length - removedActors.length;
-        if (nFavorites > 0 && nFavorites < nIcons) {
+        if (false && nFavorites > 0 && nFavorites < nIcons) {
             if (!this._separator) {
                 this._separator = new St.Widget({
                     style_class: 'dash-separator',
@@ -972,6 +972,16 @@ export const DockDash = GObject.registerClass({
             this._shownInitially = true;
 
         addedItems.forEach(({item}) => item.show(animate));
+
+        // ── Custom App: sourceActor für Panel-Positionierung aktualisieren ──
+        if (dockManager.customApp) {
+            const customApp = dockManager.customApp.getApp();
+            const customChild = this._box.get_children().find(actor =>
+                actor.child?._delegate?.app === customApp);
+            if (customChild)
+                dockManager.customApp._sourceActor = customChild; // Container, nicht child
+        }
+        // ───────────────────────────────────────────────────────────────────
 
         // Workaround for https://bugzilla.gnome.org/show_bug.cgi?id=692744
         // Without it, StBoxLayout may use a stale size cache
