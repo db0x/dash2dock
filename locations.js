@@ -1465,7 +1465,7 @@ class CustomIconPanel {
         const panelH = 4 * btnSize + panelPad;
 
         let panelX = Math.round(stageX + (iconW / 2) - (panelW / 2));
-        const panelY = Math.round(stageY - panelH - 8);
+        const panelY = Math.round(stageY - panelH - 48);
 
         panelX = Math.max(monitor.x + 8,
             Math.min(panelX, monitor.x + monitor.width - panelW - 8));
@@ -1518,13 +1518,13 @@ export class CustomApp {
 
         const appInfo = new LocationAppInfo({
             name: 'Mein Icon',
-            icon: Gio.ThemedIcon.new('starred-symbolic'),
+            icon: Gio.ThemedIcon.new('preferences-desktop-gaming'),
             cancellable: new Gio.Cancellable(),
         });
 
         this._app = makeLocationApp({
             appInfo,
-            fallbackIconName: 'starred-symbolic',
+            fallbackIconName: 'preferences-desktop-gaming',
         });
 
         this._app._setDtdData({isCustom: true}, {getter: true, enumerable: true});
