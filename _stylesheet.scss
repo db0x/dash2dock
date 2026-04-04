@@ -518,3 +518,22 @@ $dock_style_modes: [null, shrink, extended, extended-shrink];
     border: 1px solid rgba(0, 0, 0, 0.4) !important;
     border-radius: $base_border_radius*2 $base_border_radius*2 0 0 !important;
 }
+// ── Custom App Panel ─────────────────────────────────────────────────────────
+.custom-app-panel {
+    .dash-item-container {
+        .app-well-app .overview-icon,
+        .overview-tile .overview-icon {
+            background-color: rgba(255, 255, 255, 0);
+        }
+
+        .app-well-app:hover .overview-icon,
+        .app-well-app.focused .overview-icon {
+            background-color: $remark_color;
+        }
+
+        .app-well-app {
+            padding: 8px;
+        }
+    }
+}
+// ─────────────────────────────────────────────────────────────────────────────

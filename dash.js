@@ -567,6 +567,27 @@ export const DockDash = GObject.registerClass({
         return item;
     }
 
+    /**
+     * Erstellt ein App-Icon für das Custom Panel – ohne ScrollView-abhängige Signale.
+     * Öffentliche Methode damit locations.js sie nutzen kann.
+     */
+    createPanelItem(app) {
+        const appIcon = new AppIcons.makeAppIcon(app, this._monitorIndex, this.iconAnimator);
+
+        const item = new DockDashItemContainer(this._position);
+        item.setChild(appIcon);
+
+        appIcon.label_actor = null;
+        item.setLabelText(app.get_name());
+        appIcon.icon.setIconSize(this.iconSize);
+        this._hookUpLabel(item, appIcon);
+
+        item.connectObject('notify::position', () => appIcon.updateIconGeometry(), appIcon);
+        item.connectObject('notify::size', () => appIcon.updateIconGeometry(), appIcon);
+
+        return item;
+    }
+
     _requireVisibility() {
         this.requiresVisibility = true;
 

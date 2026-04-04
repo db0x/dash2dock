@@ -1380,7 +1380,7 @@ class CustomIconPanel {
             : 'border-radius: 16px; padding: 12px;';
 
         this.actor = new St.BoxLayout({
-            style_class: 'dash-background',
+            style_class: 'dash-background custom-app-panel',
             style,
             vertical: true,
             reactive: true,
@@ -1388,10 +1388,13 @@ class CustomIconPanel {
             opacity: 0,
         });
 
-        // Erste 16 installierte Apps holen
+        // Nur Apps der Kategorie "Game" holen
         const apps = Shell.AppSystem.get_default()
             .get_installed()
-            .filter(info => info.should_show())
+            .filter(info => {
+                const cats = info.get_categories() ?? '';
+                return info.should_show() && cats.includes('Game');
+            })
             .slice(0, 16)
             .map(info => Shell.AppSystem.get_default().lookup_app(info.get_id()))
             .filter(app => app !== null);
@@ -1404,11 +1407,10 @@ class CustomIconPanel {
             for (let col = 0; col < 4; col++) {
                 const app = apps[row * 4 + col];
                 if (app) {
-                    const item = dash._createAppItem(app);
+                    const item = dash.createPanelItem(app);
                     item.show(false);
                     rowBox.add_child(item);
                 } else {
-                    // Leerer Platzhalter
                     rowBox.add_child(new St.Bin({width: iconSize + 16, height: iconSize + 16}));
                 }
             }
@@ -1422,16 +1424,19 @@ class CustomIconPanel {
     open() {
         this.isOpen = true;
 
-        // Position BEVOR show() – kein Flash oben links
-        // Größe explizit berechnen statt get_preferred_size() zu vertrauen
         this.actor.ensure_style();
         this._reposition();
 
         this.actor.show();
         this.actor.ease({opacity: 255, duration: 150, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
 
-        // Handler erst im nächsten Frame registrieren – sonst schließt
-        // der aktuelle Click das Panel sofort wieder
+        // Labels der Dock-Icons über unser Panel heben (z-order Fix)
+        Main.uiGroup.get_children().forEach(child => {
+            if (child.style_class?.includes('dash-label'))
+                Main.uiGroup.set_child_above_sibling(child, this.actor);
+        });
+
+        // Handler erst im nächsten Frame registrieren
         GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
             if (!this.isOpen)
                 return GLib.SOURCE_REMOVE;
