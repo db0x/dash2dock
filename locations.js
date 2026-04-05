@@ -1426,6 +1426,8 @@ class CustomIconPanel {
                     if (app) {
                         const item = dash.createPanelItem(app);
                         item.show(false);
+                        // Panel schließen wenn ein Icon angeklickt wird
+                        item.child?.connectObject('clicked', () => this.close(), this.actor);
                         rowBox.add_child(item);
                     } else {
                         // Platzhalter für die letzte Zeile, falls nicht voll
