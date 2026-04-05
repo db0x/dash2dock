@@ -1388,33 +1388,55 @@ class CustomIconPanel {
             opacity: 0,
         });
 
-        // Nur Apps der Kategorie "Game" holen
+        // 1. Apps holen (slice(0, 16) entfernt, um dynamisch zu bleiben)
         const apps = Shell.AppSystem.get_default()
             .get_installed()
             .filter(info => {
                 const cats = info.get_categories() ?? '';
-                return info.should_show() && cats.includes('Game');
+                return info.should_show() && cats.includes('Amiga');
             })
-            .slice(0, 16)
             .map(info => Shell.AppSystem.get_default().lookup_app(info.get_id()))
             .filter(app => app !== null);
 
-        // Icons via mainDock._createAppItem() – identisch zum Dock
-        // (Hover-Effekt, Label, running-dots, alles inklusive)
-        const dash = mainDock.dash;
-        for (let row = 0; row < 4; row++) {
-            const rowBox = new St.BoxLayout({vertical: false});
-            for (let col = 0; col < 4; col++) {
-                const app = apps[row * 4 + col];
-                if (app) {
-                    const item = dash.createPanelItem(app);
-                    item.show(false);
-                    rowBox.add_child(item);
-                } else {
-                    rowBox.add_child(new St.Bin({width: iconSize + 16, height: iconSize + 16}));
+        const appCount = apps.length;
+
+        this.actor.appCount = appCount; // Optional: für CSS Styling basierend auf der Anzahl
+
+        if (appCount > 0) {
+            // 2. Raster-Größe berechnen
+            // Beispiel: bei 5 Apps -> Wurzel ist ~2.23 -> aufgerundet 3 Spalten
+            const columns = Math.ceil(Math.sqrt(appCount));
+            this.actor.columns = columns; // Optional: für CSS Styling basierend auf der Spaltenanzahl
+            const rows = Math.ceil(appCount / columns);
+            this.actor.rows = rows; // Optional: für CSS Styling basierend auf der Zeilenanzahl
+
+            const dash = mainDock.dash;
+
+            // 3. Dynamische Schleifen
+            for (let r = 0; r < rows; r++) {
+                const rowBox = new St.BoxLayout({ 
+                    vertical: false,
+                    style_class: 'app-grid-row' // Optional für CSS Styling
+                });
+
+                for (let c = 0; c < columns; c++) {
+                    const index = r * columns + c;
+                    const app = apps[index];
+
+                    if (app) {
+                        const item = dash.createPanelItem(app);
+                        item.show(false);
+                        rowBox.add_child(item);
+                    } else {
+                        // Platzhalter für die letzte Zeile, falls nicht voll
+                        rowBox.add_child(new St.Bin({ 
+                            width: iconSize + 16, 
+                            height: iconSize + 16 
+                        }));
+                    }
                 }
+                this.actor.add_child(rowBox);
             }
-            this.actor.add_child(rowBox);
         }
 
         // Unsichtbar zur Stage hinzufügen um Größe zu berechnen
@@ -1466,11 +1488,11 @@ class CustomIconPanel {
         const iconSize = this._iconSize;
         const btnSize = iconSize + 16; // 8px padding each side
         const panelPad = 24; // 12px padding each side
-        const panelW = 4 * btnSize + panelPad;
-        const panelH = 4 * btnSize + panelPad;
+        const panelW = this.actor.columns * btnSize + panelPad + 32;
+        const panelH = this.actor.rows * btnSize + panelPad + 32;
 
         let panelX = Math.round(stageX + (iconW / 2) - (panelW / 2));
-        const panelY = Math.round(stageY - panelH - 48);
+        const panelY = Math.round(stageY - panelH);
 
         panelX = Math.max(monitor.x + 8,
             Math.min(panelX, monitor.x + monitor.width - panelW - 8));
@@ -1522,7 +1544,7 @@ export class CustomApp {
             return;
 
         const appInfo = new LocationAppInfo({
-            name: 'Mein Icon',
+            name: 'Amiga Spiele',
             icon: Gio.ThemedIcon.new('preferences-desktop-gaming'),
             cancellable: new Gio.Cancellable(),
         });
