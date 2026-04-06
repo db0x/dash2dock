@@ -1460,20 +1460,40 @@ class CustomIconPanel {
                 Main.uiGroup.set_child_above_sibling(child, this.actor);
         });
 
-        // Handler erst im nächsten Frame registrieren
+        // Panel schließen wenn das Dock ausblendet
+        const mainDock = Docking.DockManager.getDefault().mainDock;
+        this._dockHidingId = mainDock?.connect('hiding', () => this.close());
+
+        // Transparenter Overlay über dem gesamten Bildschirm – fängt alle
+        // Klicks außerhalb des Panels ab (gleiche Technik wie PopupMenuManager)
         GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
             if (!this.isOpen)
                 return GLib.SOURCE_REMOVE;
-            this._stageHandler = global.stage.connect('button-press-event',
-                (_actor, event) => {
-                    const [ex, ey] = event.get_coords();
-                    const [ax, ay] = this.actor.get_transformed_position();
-                    const aw = this.actor.get_width();
-                    const ah = this.actor.get_height();
-                    if (ex < ax || ex > ax + aw || ey < ay || ey > ay + ah)
-                        this.close();
+
+            const monitor = Main.layoutManager.primaryMonitor;
+            this._overlay = new Clutter.Actor({
+                reactive: true,
+                x: monitor.x,
+                y: monitor.y,
+                width: monitor.width,
+                height: monitor.height,
+                opacity: 0,
+            });
+            this._overlay.connect('button-press-event', (_actor, event) => {
+                const [ex, ey] = event.get_coords();
+                const [ax, ay] = this.actor.get_transformed_position();
+                const aw = this.actor.get_width();
+                const ah = this.actor.get_height();
+                // Innerhalb des Panels → Event durchlassen
+                if (ex >= ax && ex <= ax + aw && ey >= ay && ey <= ay + ah) {
+                    this._overlay.reactive = false;
                     return Clutter.EVENT_PROPAGATE;
-                });
+                }
+                this.close();
+                return Clutter.EVENT_STOP;
+            });
+            // Overlay unter dem Panel einfügen
+            Main.uiGroup.insert_child_below(this._overlay, this.actor);
             return GLib.SOURCE_REMOVE;
         });
     }
@@ -1506,9 +1526,13 @@ class CustomIconPanel {
         if (!this.isOpen)
             return;
         this.isOpen = false;
-        if (this._stageHandler) {
-            global.stage.disconnect(this._stageHandler);
-            this._stageHandler = null;
+        if (this._dockHidingId) {
+            Docking.DockManager.getDefault().mainDock?.disconnect(this._dockHidingId);
+            this._dockHidingId = null;
+        }
+        if (this._overlay) {
+            this._overlay.destroy();
+            this._overlay = null;
         }
         this._onClose?.();
         this.actor?.ease({
@@ -1520,9 +1544,13 @@ class CustomIconPanel {
     }
 
     destroy() {
-        if (this._stageHandler) {
-            global.stage.disconnect(this._stageHandler);
-            this._stageHandler = null;
+        if (this._dockHidingId) {
+            Docking.DockManager.getDefault().mainDock?.disconnect(this._dockHidingId);
+            this._dockHidingId = null;
+        }
+        if (this._overlay) {
+            this._overlay.destroy();
+            this._overlay = null;
         }
         this.actor?.destroy();
         this.actor = null;

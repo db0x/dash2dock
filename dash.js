@@ -263,6 +263,18 @@ export const DockDash = GObject.registerClass({
             'app-state-changed',
             this._queueRedisplay.bind(this),
         ], [
+            // Fallback für Apps die app-state-changed verpassen (z.B. Emulatoren
+            // bei denen WindowTracker die Zuordnung verzögert abschließt)
+            global.display,
+            'window-created',
+            (_display, window) => {
+                const sourceId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
+                    this._queueRedisplay();
+                    return GLib.SOURCE_REMOVE;
+                });
+                window.connect('unmanaged', () => GLib.source_remove(sourceId));
+            },
+        ], [
             Main.overview,
             'item-drag-begin',
             this._onItemDragBegin.bind(this),
