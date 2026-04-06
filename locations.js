@@ -1393,7 +1393,7 @@ class CustomIconPanel {
             .get_installed()
             .filter(info => {
                 const cats = info.get_categories() ?? '';
-                return info.should_show() && cats.includes('Amiga');
+                return info.should_show() && cats.includes('d2dGames');
             })
             .map(info => Shell.AppSystem.get_default().lookup_app(info.get_id()))
             .filter(app => app !== null);
@@ -1520,15 +1520,11 @@ class CustomIconPanel {
         const iconW = this._sourceActor.get_width();
         const monitor = Main.layoutManager.findMonitorForActor(this._sourceActor);
 
-        // Explizite Größe: 4 Icons × (iconSize + 2×padding) + 2×panel-padding
-        const iconSize = this._iconSize;
-        const btnSize = iconSize + 16; // 8px padding each side
-        const panelPad = 24; // 12px padding each side
-        const panelW = this.actor.columns * btnSize + panelPad + 32;
-        const panelH = this.actor.rows * btnSize + panelPad + 32;
+        // Tatsächliche Größe vom Layout-System holen statt manuell berechnen
+        const [, , panelW, panelH] = this.actor.get_preferred_size();
 
         let panelX = Math.round(stageX + (iconW / 2) - (panelW / 2));
-        const panelY = Math.round(stageY - panelH);
+        const panelY = Math.round(stageY - (panelH*2));
 
         panelX = Math.max(monitor.x + 8,
             Math.min(panelX, monitor.x + monitor.width - panelW - 8));
