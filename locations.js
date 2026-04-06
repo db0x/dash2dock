@@ -1448,6 +1448,11 @@ class CustomIconPanel {
     open() {
         this.isOpen = true;
 
+        // Dock sichtbar halten solange Panel offen ist
+        this._dash = Docking.DockManager.getDefault().mainDock?.dash;
+        if (this._dash)
+            this._dash.requiresVisibility = true;
+
         this.actor.ensure_style();
         this._reposition();
 
@@ -1460,9 +1465,18 @@ class CustomIconPanel {
                 Main.uiGroup.set_child_above_sibling(child, this.actor);
         });
 
-        // Panel schließen wenn das Dock ausblendet
+        // Panel schließen wenn das Dock ausblendet –
+        // Handler mit Verzögerung verbinden damit das initiale Hide
+        // direkt nach dem Klick ignoriert wird
         const mainDock = Docking.DockManager.getDefault().mainDock;
-        this._dockHidingId = mainDock?.connect('hiding', () => this.close());
+        if (mainDock) {
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 600, () => {
+                if (!this.isOpen)
+                    return GLib.SOURCE_REMOVE;
+                this._dockHidingId = mainDock.connect('hiding', () => this.close());
+                return GLib.SOURCE_REMOVE;
+            });
+        }
 
         // Transparenter Overlay über dem gesamten Bildschirm – fängt alle
         // Klicks außerhalb des Panels ab (gleiche Technik wie PopupMenuManager)
@@ -1526,6 +1540,13 @@ class CustomIconPanel {
         if (!this.isOpen)
             return;
         this.isOpen = false;
+
+        // Dock wieder normal ausblenden lassen
+        if (this._dash) {
+            this._dash.requiresVisibility = false;
+            this._dash = null;
+        }
+
         if (this._dockHidingId) {
             Docking.DockManager.getDefault().mainDock?.disconnect(this._dockHidingId);
             this._dockHidingId = null;
