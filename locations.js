@@ -18,6 +18,7 @@ import {
 import {
     AppIcons,
     Docking,
+    Theming,
     Utils,
 } from './imports.js';
 
@@ -1369,26 +1370,67 @@ class CustomIconPanel {
         this._onClose = onClose;
 
         const mainDock = Docking.DockManager.getDefault().mainDock;
-        const tm = mainDock?._themeManager;
-        const iconSize = mainDock?.dash?.iconSize ?? 48;
-        this._iconSize = iconSize;
+        this._iconSize = mainDock?.dash?.iconSize ?? 48;
+        this._position = Utils.getPosition();
 
-        const style = tm?._customizedBackground
-            ? `background-color: rgba(83, 84, 84, 0.3);` +
-              `border: 1px solid rgba(0, 0, 0, 0.4);` +
-              `border-radius: 16px; padding: 12px;`
-            : 'border-radius: 16px; padding: 12px;';
-
-        this.actor = new St.BoxLayout({
-            style_class: 'dash-background custom-app-panel',
-            style,
-            vertical: true,
+        // Äußeres Widget – identisch zu DockDash
+        this.actor = new St.Widget({
+            name: 'dash',
+            style_class: 'custom-app-panel',
+            offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
+            layout_manager: new Clutter.BinLayout(),
             reactive: true,
             visible: false,
             opacity: 0,
         });
 
-        // 1. Apps holen (slice(0, 16) entfernt, um dynamisch zu bleiben)
+        // dashtodockDashContainer – wie in DockDash
+        this._dashContainer = new St.BoxLayout({
+            name: 'dashtodockDashContainer',
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+            vertical: true,
+            x_expand: true,
+            y_expand: true,
+        });
+
+        // dashtodockBoxContainer – wie in DockDash, mit Positions-Klasse
+        this._boxContainer = new St.BoxLayout({
+            name: 'dashtodockBoxContainer',
+            x_align: Clutter.ActorAlign.FILL,
+            y_align: Clutter.ActorAlign.FILL,
+            vertical: true,
+        });
+        this._boxContainer.add_style_class_name(Theming.PositionStyleClass[this._position]);
+
+        // dash-background – wie in DockDash
+        this._background = new St.Widget({
+            style_class: 'dash-background',
+            x_expand: true,
+            y_expand: true,
+        });
+
+        const sizerBox = new Clutter.Actor();
+        sizerBox.add_constraint(new Clutter.BindConstraint({
+            source: this._dashContainer,
+            coordinate: Clutter.BindCoordinate.HEIGHT,
+        }));
+        sizerBox.add_constraint(new Clutter.BindConstraint({
+            source: this._dashContainer,
+            coordinate: Clutter.BindCoordinate.WIDTH,
+        }));
+        this._background.add_child(sizerBox);
+
+        this._buildGrid(mainDock);
+
+        this._dashContainer.add_child(this._boxContainer);
+        this.actor.add_child(this._background);
+        this.actor.add_child(this._dashContainer);
+
+        Main.uiGroup.add_child(this.actor);
+    }
+
+    _buildGrid(mainDock) {
         const apps = Shell.AppSystem.get_default()
             .get_installed()
             .filter(info => {
@@ -1399,50 +1441,37 @@ class CustomIconPanel {
             .filter(app => app !== null);
 
         const appCount = apps.length;
+        if (appCount === 0)
+            return;
 
-        this.actor.appCount = appCount; // Optional: für CSS Styling basierend auf der Anzahl
+        const columns = Math.ceil(Math.sqrt(appCount));
+        const rows = Math.ceil(appCount / columns);
+        const dash = mainDock.dash;
 
-        if (appCount > 0) {
-            // 2. Raster-Größe berechnen
-            // Beispiel: bei 5 Apps -> Wurzel ist ~2.23 -> aufgerundet 3 Spalten
-            const columns = Math.ceil(Math.sqrt(appCount));
-            this.actor.columns = columns; // Optional: für CSS Styling basierend auf der Spaltenanzahl
-            const rows = Math.ceil(appCount / columns);
-            this.actor.rows = rows; // Optional: für CSS Styling basierend auf der Zeilenanzahl
+        for (let r = 0; r < rows; r++) {
+            const rowBox = new St.BoxLayout({
+                vertical: false,
+                style_class: 'app-grid-row',
+            });
 
-            const dash = mainDock.dash;
+            for (let c = 0; c < columns; c++) {
+                const index = r * columns + c;
+                const app = apps[index];
 
-            // 3. Dynamische Schleifen
-            for (let r = 0; r < rows; r++) {
-                const rowBox = new St.BoxLayout({ 
-                    vertical: false,
-                    style_class: 'app-grid-row' // Optional für CSS Styling
-                });
-
-                for (let c = 0; c < columns; c++) {
-                    const index = r * columns + c;
-                    const app = apps[index];
-
-                    if (app) {
-                        const item = dash.createPanelItem(app);
-                        item.show(false);
-                        // Panel schließen wenn ein Icon angeklickt wird
-                        item.child?.connectObject('clicked', () => this.close(), this.actor);
-                        rowBox.add_child(item);
-                    } else {
-                        // Platzhalter für die letzte Zeile, falls nicht voll
-                        rowBox.add_child(new St.Bin({ 
-                            width: iconSize + 16, 
-                            height: iconSize + 16 
-                        }));
-                    }
+                if (app) {
+                    const item = dash.createPanelItem(app);
+                    item.show(false);
+                    item.child?.connectObject('clicked', () => this.close(), this.actor);
+                    rowBox.add_child(item);
+                } else {
+                    rowBox.add_child(new St.Bin({
+                        width: this._iconSize + 16,
+                        height: this._iconSize + 16,
+                    }));
                 }
-                this.actor.add_child(rowBox);
             }
+            this._boxContainer.add_child(rowBox);
         }
-
-        // Unsichtbar zur Stage hinzufügen um Größe zu berechnen
-        Main.uiGroup.add_child(this.actor);
     }
 
     open() {
