@@ -1357,8 +1357,6 @@ export class Trash {
 }
 
 // ── Custom Icon ──────────────────────────────────────────────────────────────
-// ── Custom Icon ──────────────────────────────────────────────────────────────
-
 /**
  * Ein 4×4 Icon-Grid-Panel das über dem Dock erscheint,
  * wenn auf unser Custom Icon geklickt wird.
@@ -1373,15 +1371,24 @@ class CustomIconPanel {
         this._iconSize = mainDock?.dash?.iconSize ?? 48;
         this._position = Utils.getPosition();
 
-        // Äußeres Widget – identisch zu DockDash
+        // Äußerster Container – spiegelt #dashtodockContainer wider,
+        // damit alle CSS-Selektoren aus _stylesheet.scss greifen.
         this.actor = new St.Widget({
-            name: 'dash',
-            style_class: 'custom-app-panel',
+            name: 'dashtodockContainer',
+            style_class: Theming.PositionStyleClass[this._position],
             offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
             layout_manager: new Clutter.BinLayout(),
             reactive: true,
             visible: false,
             opacity: 0,
+        });
+
+        // Innerer #dash-Actor – entspricht dem DockDash-Widget
+        this._dashActor = new St.Widget({
+            name: 'dash',
+            layout_manager: new Clutter.BinLayout(),
+            x_expand: true,
+            y_expand: true,
         });
 
         // dashtodockDashContainer – wie in DockDash
@@ -1424,8 +1431,9 @@ class CustomIconPanel {
         this._buildGrid(mainDock);
 
         this._dashContainer.add_child(this._boxContainer);
-        this.actor.add_child(this._background);
-        this.actor.add_child(this._dashContainer);
+        this._dashActor.add_child(this._background);
+        this._dashActor.add_child(this._dashContainer);
+        this.actor.add_child(this._dashActor);
 
         Main.uiGroup.add_child(this.actor);
     }
@@ -1474,6 +1482,29 @@ class CustomIconPanel {
         }
     }
 
+    _syncTheme() {
+        const mainDock = Docking.DockManager.getDefault().mainDock;
+        if (!mainDock)
+            return;
+
+        // Stil-Klassen des Dock-Containers auf unseren äußeren Actor übertragen,
+        // damit CSS-Selektoren wie .dashtodock, .shrink, .straight-corner greifen.
+        const positionClasses = new Set(Theming.PositionStyleClass);
+        const dockClasses = (mainDock.style_class ?? '').split(/\s+/).filter(Boolean);
+
+        // Alte gesyncte Klassen entfernen
+        if (this._syncedClasses) {
+            this._syncedClasses.forEach(c => this.actor.remove_style_class_name(c));
+        }
+        // Neue Klassen (ohne Positions-Klassen, die wir selbst setzen) übernehmen
+        this._syncedClasses = dockClasses.filter(c => !positionClasses.has(c));
+        this._syncedClasses.forEach(c => this.actor.add_style_class_name(c));
+
+        // Inline-Style vom Dock-Hintergrund kopieren (enthält Farbe, Transparenz, Border)
+        const bgStyle = mainDock.dash._background.get_style();
+        this._background.set_style(bgStyle ?? null);
+    }
+
     open() {
         this.isOpen = true;
 
@@ -1482,6 +1513,7 @@ class CustomIconPanel {
         if (this._dash)
             this._dash.requiresVisibility = true;
 
+        this._syncTheme();
         this.actor.ensure_style();
         this._reposition();
 
