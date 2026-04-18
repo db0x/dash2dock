@@ -393,6 +393,7 @@ export const DockDash = GObject.registerClass({
 
     handleDragOver(source, actor, x, y, time) {
         let ret;
+        const sourceApp = source?.app ?? source?._delegate?.app;
         if (this._isHorizontal) {
             ret = Dash.Dash.prototype.handleDragOver.call(this, source, actor, x, y, time);
 
@@ -449,11 +450,29 @@ export const DockDash = GObject.registerClass({
             }
         }
 
+        if (sourceApp?.isCustom && ret === DND.DragMotionResult.COPY_DROP)
+            ret = DND.DragMotionResult.MOVE_DROP;
+
         return ret;
     }
 
-    acceptDrop(...args) {
-        return Dash.Dash.prototype.acceptDrop.call(this, ...args);
+    acceptDrop(source, actor, x, y, time) {
+        const sourceApp = source?.app ?? source?._delegate?.app;
+        if (sourceApp?.isCustom && this._dragPlaceholderPos !== -1) {
+            const children = this._box.get_children();
+            let appIndex = 0;
+            for (let i = 0; i < this._dragPlaceholderPos; i++) {
+                const child = children[i];
+                const childApp = child.child?._delegate?.app;
+                if (childApp && !childApp.isCustom)
+                    appIndex++;
+            }
+            Docking.DockManager.settings.set_int('custom-icon-position', appIndex);
+            this._clearDragPlaceholder();
+            this._queueRedisplay();
+            return true;
+        }
+        return Dash.Dash.prototype.acceptDrop.call(this, source, actor, x, y, time);
     }
 
     _onWindowDragBegin(...args) {
@@ -873,8 +892,13 @@ export const DockDash = GObject.registerClass({
         // ── Custom App ──────────────────────────────────────────────
         if (dockManager.customApp) {
             const customApp = dockManager.customApp.getApp();
-            if (!newApps.includes(customApp))
-                newApps.push(customApp);
+            if (!newApps.includes(customApp)) {
+                const pos = settings.customIconPosition;
+                if (pos >= 0 && pos <= newApps.length)
+                    newApps.splice(pos, 0, customApp);
+                else
+                    newApps.push(customApp);
+            }
         }
         // ───────────────────────────────────────────────────────────
 

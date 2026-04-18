@@ -1223,6 +1223,8 @@ function makeLocationApp(params) {
         },
 
         _updateWindows() {
+            if (!fm1Client)
+                return;
             const windows = fm1Client.getWindows(this.location?.get_uri()).sort(
                 Utils.shellWindowsCompare);
             const {windowsChanged} = this._setWindows(windows);
@@ -1240,8 +1242,10 @@ function makeLocationApp(params) {
         },
     }, {readOnly: false});
 
-    shellApp._signalConnections.add(fm1Client, 'windows-changed', () =>
-        shellApp._updateWindows());
+    if (fm1Client) {
+        shellApp._signalConnections.add(fm1Client, 'windows-changed', () =>
+            shellApp._updateWindows());
+    }
     shellApp._signalConnections.add(shellApp.appInfo, 'notify::icon', () =>
         shellApp.notify('icon'));
     shellApp._signalConnections.add(global.workspaceManager,

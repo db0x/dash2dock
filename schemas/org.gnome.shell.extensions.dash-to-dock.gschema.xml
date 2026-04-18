@@ -301,6 +301,11 @@
       <summary>Custom icon label</summary>
       <description>Display name for the custom icon panel launcher in the dock</description>
     </key>
+    <key type="i" name="custom-icon-position">
+      <default>-1</default>
+      <summary>Custom icon position</summary>
+      <description>Position index of the custom icon in the dock (-1 = last)</description>
+    </key>
     <key type="b" name="dance-urgent-applications">
       <default>true</default>
       <summary>Wiggle urgent applications</summary>
