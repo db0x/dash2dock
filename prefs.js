@@ -703,6 +703,7 @@ const DockSettings = GObject.registerClass({
         isolateLocationsBindings.forEach(s => this._builder.get_object(s).connect(
             'notify::active', () => updateIsolateLocations()));
         const customIconCategoryBox = this._builder.get_object('custom_icon_category_box');
+        const customIconCategoryLabel = this._builder.get_object('custom_icon_category_label');
         const categories = [...new Set(
             Gio.AppInfo.get_all()
                 .flatMap(a => (a.get_categories() ?? '').split(';').filter(c => c))
@@ -730,6 +731,18 @@ const DockSettings = GObject.registerClass({
                 categoryDropdown.selected = idx;
         });
         customIconCategoryBox.append(categoryDropdown);
+        this._settings.bind('show-custom-icon-panel',
+            this._builder.get_object('custom_icon_panel_switch'),
+            'active',
+            Gio.SettingsBindFlags.DEFAULT);
+        this._settings.bind('show-custom-icon-panel',
+            customIconCategoryBox,
+            'sensitive',
+            Gio.SettingsBindFlags.GET);
+        this._settings.bind('show-custom-icon-panel',
+            customIconCategoryLabel,
+            'sensitive',
+            Gio.SettingsBindFlags.GET);
         this._settings.bind('dance-urgent-applications',
             this._builder.get_object('wiggle_urgent_applications_switch'),
             'active',

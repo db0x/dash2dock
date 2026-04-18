@@ -1498,7 +1498,7 @@
                                 <property name="can_focus">0</property>
                                 <property name="hexpand">1</property>
                                 <property name="halign">start</property>
-                                <property name="label" translatable="yes">Custom icon panel category</property>
+                                <property name="label" translatable="yes">Custom icon panel</property>
                                 <layout>
                                   <property name="column">0</property>
                                   <property name="row">0</property>
@@ -1506,12 +1506,36 @@
                               </object>
                             </child>
                             <child>
-                              <object class="GtkBox" id="custom_icon_category_box">
+                              <object class="GtkSwitch" id="custom_icon_panel_switch">
                                 <property name="halign">end</property>
                                 <property name="valign">center</property>
                                 <layout>
                                   <property name="column">1</property>
                                   <property name="row">0</property>
+                                </layout>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkLabel" id="custom_icon_category_label">
+                                <property name="can_focus">0</property>
+                                <property name="hexpand">1</property>
+                                <property name="halign">start</property>
+                                <property name="margin_top">12</property>
+                                <property name="label" translatable="yes">Category</property>
+                                <layout>
+                                  <property name="column">0</property>
+                                  <property name="row">1</property>
+                                </layout>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkBox" id="custom_icon_category_box">
+                                <property name="halign">end</property>
+                                <property name="valign">center</property>
+                                <property name="margin_top">12</property>
+                                <layout>
+                                  <property name="column">1</property>
+                                  <property name="row">1</property>
                                 </layout>
                               </object>
                             </child>

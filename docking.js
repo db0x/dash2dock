@@ -1861,8 +1861,12 @@ export class DockManager {
         }
 
         // ── Custom App ──────────────────────────────────────────────
-        if (!this._customApp)
+        if (this.settings.showCustomIconPanel && !this._customApp) {
             this._customApp = new Locations.CustomApp();
+        } else if (!this.settings.showCustomIconPanel && this._customApp) {
+            this._customApp.destroy();
+            this._customApp = null;
+        }
         // ───────────────────────────────────────────────────────────
 
         Locations.unWrapFileManagerApp();
@@ -2031,6 +2035,13 @@ export class DockManager {
             this._settings,
             'changed::isolate-locations',
             () => this._ensureLocations(),
+        ], [
+            this._settings,
+            'changed::show-custom-icon-panel',
+            () => {
+                this._ensureLocations();
+                DockManager.allDocks.forEach(dock => dock.dash._queueRedisplay());
+            },
         ], [
             this._settings,
             'changed::intellihide',
