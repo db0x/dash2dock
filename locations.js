@@ -1680,7 +1680,7 @@ export class CustomApp {
 
         const iconName = Docking.DockManager.settings.customIconName || 'applications-games';
         const appInfo = new LocationAppInfo({
-            name: 'Amiga Spiele',
+            name: Docking.DockManager.settings.customIconLabel || 'My Games',
             icon: Gio.ThemedIcon.new(iconName),
             cancellable: new Gio.Cancellable(),
         });

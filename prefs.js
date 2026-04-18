@@ -1,5 +1,6 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
+import Adw from 'gi://Adw';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Gdk from 'gi://Gdk';
@@ -743,27 +744,31 @@ const DockSettings = GObject.registerClass({
             customIconCategoryLabel,
             'sensitive',
             Gio.SettingsBindFlags.GET);
-        const customIconNameEntry = this._builder.get_object('custom_icon_name_entry');
-        const customIconNameLabel = this._builder.get_object('custom_icon_name_label');
-        customIconNameEntry.set_text(this._settings.get_string('custom-icon-name'));
-        customIconNameEntry.connect('changed', () => {
-            const val = customIconNameEntry.get_text().trim();
-            if (val && val !== this._settings.get_string('custom-icon-name'))
-                this._settings.set_string('custom-icon-name', val);
+        const customIconNameRow = new Adw.EntryRow({
+            title: __('Icon name'),
         });
-        this._settings.connect('changed::custom-icon-name', () => {
-            const val = this._settings.get_string('custom-icon-name');
-            if (val !== customIconNameEntry.get_text())
-                customIconNameEntry.set_text(val);
-        });
+        this._settings.bind('custom-icon-name',
+            customIconNameRow,
+            'text',
+            Gio.SettingsBindFlags.DEFAULT);
         this._settings.bind('show-custom-icon-panel',
-            customIconNameEntry,
+            customIconNameRow,
             'sensitive',
             Gio.SettingsBindFlags.GET);
+        const customIconLabelRow = new Adw.EntryRow({
+            title: __('Icon label'),
+        });
+        this._settings.bind('custom-icon-label',
+            customIconLabelRow,
+            'text',
+            Gio.SettingsBindFlags.DEFAULT);
         this._settings.bind('show-custom-icon-panel',
-            customIconNameLabel,
+            customIconLabelRow,
             'sensitive',
             Gio.SettingsBindFlags.GET);
+        const listbox9 = this._builder.get_object('listbox9');
+        listbox9.append(customIconNameRow);
+        listbox9.append(customIconLabelRow);
         this._settings.bind('dance-urgent-applications',
             this._builder.get_object('wiggle_urgent_applications_switch'),
             'active',

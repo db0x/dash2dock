@@ -1485,6 +1485,7 @@
                     </child>
                     <child>
                       <object class="GtkListBoxRow" id="custom_icon_category_row">
+                        <property name="activatable">0</property>
                         <property name="child">
                           <object class="GtkGrid">
                             <property name="can_focus">0</property>
@@ -1536,31 +1537,6 @@
                                 <layout>
                                   <property name="column">1</property>
                                   <property name="row">1</property>
-                                </layout>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkLabel" id="custom_icon_name_label">
-                                <property name="can_focus">0</property>
-                                <property name="hexpand">1</property>
-                                <property name="halign">start</property>
-                                <property name="margin_top">12</property>
-                                <property name="label" translatable="yes">Icon name</property>
-                                <layout>
-                                  <property name="column">0</property>
-                                  <property name="row">2</property>
-                                </layout>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkEntry" id="custom_icon_name_entry">
-                                <property name="halign">end</property>
-                                <property name="valign">center</property>
-                                <property name="margin_top">12</property>
-                                <property name="width_chars">22</property>
-                                <layout>
-                                  <property name="column">1</property>
-                                  <property name="row">2</property>
                                 </layout>
                               </object>
                             </child>
