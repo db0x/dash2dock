@@ -1514,10 +1514,10 @@ class CustomIconPanel {
             this._dash.requiresVisibility = true;
 
         this._syncTheme();
+        this.actor.show();
         this.actor.ensure_style();
         this._reposition();
 
-        this.actor.show();
         this.actor.ease({opacity: 255, duration: 150, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
 
         // Labels der Dock-Icons über unser Panel heben (z-order Fix)
@@ -1579,16 +1579,42 @@ class CustomIconPanel {
 
         const [stageX, stageY] = this._sourceActor.get_transformed_position();
         const iconW = this._sourceActor.get_width();
+        const iconH = this._sourceActor.get_height();
         const monitor = Main.layoutManager.findMonitorForActor(this._sourceActor);
-
-        // Tatsächliche Größe vom Layout-System holen statt manuell berechnen
         const [, , panelW, panelH] = this.actor.get_preferred_size();
 
-        let panelX = Math.round(stageX + (iconW / 2) - (panelW / 2));
-        const panelY = Math.round(stageY - (panelH*2));
+        const gap = 6;
+        let panelX, panelY;
 
-        panelX = Math.max(monitor.x + 8,
-            Math.min(panelX, monitor.x + monitor.width - panelW - 8));
+        switch (this._position) {
+        case St.Side.BOTTOM:
+            panelX = Math.round(stageX + (iconW / 2) - (panelW / 2));
+            panelY = Math.round(stageY - panelH - gap);
+            panelX = Math.max(monitor.x + gap,
+                Math.min(panelX, monitor.x + monitor.width - panelW - gap));
+            break;
+        case St.Side.TOP:
+            panelX = Math.round(stageX + (iconW / 2) - (panelW / 2));
+            panelY = Math.round(stageY + iconH + gap);
+            panelX = Math.max(monitor.x + gap,
+                Math.min(panelX, monitor.x + monitor.width - panelW - gap));
+            break;
+        case St.Side.LEFT:
+            panelX = Math.round(stageX + iconW + gap);
+            panelY = Math.round(stageY + (iconH / 2) - (panelH / 2));
+            panelY = Math.max(monitor.y + gap,
+                Math.min(panelY, monitor.y + monitor.height - panelH - gap));
+            break;
+        case St.Side.RIGHT:
+            panelX = Math.round(stageX - panelW - gap);
+            panelY = Math.round(stageY + (iconH / 2) - (panelH / 2));
+            panelY = Math.max(monitor.y + gap,
+                Math.min(panelY, monitor.y + monitor.height - panelH - gap));
+            break;
+        default:
+            panelX = Math.round(stageX + (iconW / 2) - (panelW / 2));
+            panelY = Math.round(stageY - panelH - gap);
+        }
 
         this.actor.set_position(panelX, panelY);
     }
