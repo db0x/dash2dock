@@ -743,6 +743,27 @@ const DockSettings = GObject.registerClass({
             customIconCategoryLabel,
             'sensitive',
             Gio.SettingsBindFlags.GET);
+        const customIconNameEntry = this._builder.get_object('custom_icon_name_entry');
+        const customIconNameLabel = this._builder.get_object('custom_icon_name_label');
+        customIconNameEntry.set_text(this._settings.get_string('custom-icon-name'));
+        customIconNameEntry.connect('changed', () => {
+            const val = customIconNameEntry.get_text().trim();
+            if (val && val !== this._settings.get_string('custom-icon-name'))
+                this._settings.set_string('custom-icon-name', val);
+        });
+        this._settings.connect('changed::custom-icon-name', () => {
+            const val = this._settings.get_string('custom-icon-name');
+            if (val !== customIconNameEntry.get_text())
+                customIconNameEntry.set_text(val);
+        });
+        this._settings.bind('show-custom-icon-panel',
+            customIconNameEntry,
+            'sensitive',
+            Gio.SettingsBindFlags.GET);
+        this._settings.bind('show-custom-icon-panel',
+            customIconNameLabel,
+            'sensitive',
+            Gio.SettingsBindFlags.GET);
         this._settings.bind('dance-urgent-applications',
             this._builder.get_object('wiggle_urgent_applications_switch'),
             'active',

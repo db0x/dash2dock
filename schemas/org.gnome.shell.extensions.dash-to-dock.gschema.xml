@@ -291,6 +291,11 @@
       <summary>Custom icon category</summary>
       <description>Desktop category used to filter applications shown in the custom icon panel</description>
     </key>
+    <key type="s" name="custom-icon-name">
+      <default>'applications-games'</default>
+      <summary>Custom icon name</summary>
+      <description>Themed icon name used for the custom icon panel launcher in the dock</description>
+    </key>
     <key type="b" name="dance-urgent-applications">
       <default>true</default>
       <summary>Wiggle urgent applications</summary>

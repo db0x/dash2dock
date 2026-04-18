@@ -2044,6 +2044,17 @@ export class DockManager {
             },
         ], [
             this._settings,
+            'changed::custom-icon-name',
+            () => {
+                if (this._customApp) {
+                    this._customApp.destroy();
+                    this._customApp = null;
+                }
+                this._ensureLocations();
+                DockManager.allDocks.forEach(dock => dock.dash._queueRedisplay());
+            },
+        ], [
+            this._settings,
             'changed::intellihide',
             () => {
                 if (!this._settings.intellihide)
