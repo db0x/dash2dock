@@ -1443,7 +1443,8 @@ class CustomIconPanel {
             .get_installed()
             .filter(info => {
                 const cats = info.get_categories() ?? '';
-                return info.should_show() && cats.includes('d2dGames');
+                const category = Docking.DockManager.settings.customIconCategory || 'd2dGames';
+                return info.should_show() && cats.includes(category);
             })
             .map(info => Shell.AppSystem.get_default().lookup_app(info.get_id()))
             .filter(app => app !== null);

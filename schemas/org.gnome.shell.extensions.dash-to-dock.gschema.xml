@@ -281,6 +281,11 @@
       <summary>Isolate volumes, devices and trash windows</summary>
       <description>Consider volume, devices and trash as different application windows and not part of the file manager</description>
     </key>
+    <key type="s" name="custom-icon-category">
+      <default>'d2dGames'</default>
+      <summary>Custom icon category</summary>
+      <description>Desktop category used to filter applications shown in the custom icon panel</description>
+    </key>
     <key type="b" name="dance-urgent-applications">
       <default>true</default>
       <summary>Wiggle urgent applications</summary>

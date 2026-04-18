@@ -702,6 +702,34 @@ const DockSettings = GObject.registerClass({
         updateIsolateLocations();
         isolateLocationsBindings.forEach(s => this._builder.get_object(s).connect(
             'notify::active', () => updateIsolateLocations()));
+        const customIconCategoryBox = this._builder.get_object('custom_icon_category_box');
+        const categories = [...new Set(
+            Gio.AppInfo.get_all()
+                .flatMap(a => (a.get_categories() ?? '').split(';').filter(c => c))
+        )].sort();
+        const categoryModel = new Gtk.StringList();
+        categories.forEach(cat => categoryModel.append(cat));
+        const categoryDropdown = new Gtk.DropDown({
+            model: categoryModel,
+            halign: Gtk.Align.END,
+            valign: Gtk.Align.CENTER,
+        });
+        const currentCat = this._settings.get_string('custom-icon-category');
+        const initialIdx = categories.indexOf(currentCat);
+        if (initialIdx >= 0)
+            categoryDropdown.selected = initialIdx;
+        categoryDropdown.connect('notify::selected', () => {
+            const item = categoryModel.get_string(categoryDropdown.selected);
+            if (item && item !== this._settings.get_string('custom-icon-category'))
+                this._settings.set_string('custom-icon-category', item);
+        });
+        this._settings.connect('changed::custom-icon-category', () => {
+            const cat = this._settings.get_string('custom-icon-category');
+            const idx = categories.indexOf(cat);
+            if (idx >= 0 && idx !== categoryDropdown.selected)
+                categoryDropdown.selected = idx;
+        });
+        customIconCategoryBox.append(categoryDropdown);
         this._settings.bind('dance-urgent-applications',
             this._builder.get_object('wiggle_urgent_applications_switch'),
             'active',
