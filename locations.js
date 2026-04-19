@@ -1360,13 +1360,12 @@ export class Trash {
     }
 }
 
-// ── Custom Icon ──────────────────────────────────────────────────────────────
+// ── Category Icon ─────────────────────────────────────────────────────────────
 /**
  * Ein 4×4 Icon-Grid-Panel das über dem Dock erscheint,
- * wenn auf unser Custom Icon geklickt wird.
- * Ein 4×4 Icon-Grid-Panel das über dem Dock erscheint.
+ * wenn auf das Category Icon geklickt wird.
  */
-class CustomIconPanel {
+class CategoryPanel {
     constructor(sourceActor, onClose) {
         this._sourceActor = sourceActor;
         this._onClose = onClose;
@@ -1446,7 +1445,7 @@ class CustomIconPanel {
             .get_installed()
             .filter(info => {
                 const cats = info.get_categories() ?? '';
-                const category = Docking.DockManager.settings.customIconCategory || 'd2dGames';
+                const category = Docking.DockManager.settings.categoryIconCategory || 'd2dGames';
                 return info.should_show() && cats.includes(category);
             })
             .map(info => Shell.AppSystem.get_default().lookup_app(info.get_id()))
@@ -1721,10 +1720,10 @@ class CustomIconPanel {
 }
 
 /**
- * Hält ein Shell.App-Objekt für unser Custom Icon,
+ * Hält ein Shell.App-Objekt für das Category Icon,
  * analog zur Trash-Klasse – aber ohne eigene AppInfo-Subklasse.
  */
-export class CustomApp {
+export class CategoryIcon {
     destroy() {
         this._panel?.destroy();
         this._panel = null;
@@ -1736,9 +1735,9 @@ export class CustomApp {
         if (this._app)
             return;
 
-        const iconName = Docking.DockManager.settings.customIconName || 'applications-games';
+        const iconName = Docking.DockManager.settings.categoryIconName || 'applications-games';
         const appInfo = new LocationAppInfo({
-            name: Docking.DockManager.settings.customIconLabel || 'My Games',
+            name: Docking.DockManager.settings.categoryIconLabel || 'My Games',
             icon: Gio.ThemedIcon.new(iconName),
             cancellable: new Gio.Cancellable(),
         });
@@ -1777,7 +1776,7 @@ export class CustomApp {
             return;
         }
 
-        this._panel = new CustomIconPanel(sourceActor, () => {
+        this._panel = new CategoryPanel(sourceActor, () => {
             // Callback wenn Panel sich selbst schließt
             this._panel = null;
         });

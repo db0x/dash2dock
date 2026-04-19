@@ -703,8 +703,8 @@ const DockSettings = GObject.registerClass({
         updateIsolateLocations();
         isolateLocationsBindings.forEach(s => this._builder.get_object(s).connect(
             'notify::active', () => updateIsolateLocations()));
-        const customIconCategoryBox = this._builder.get_object('custom_icon_category_box');
-        const customIconCategoryLabel = this._builder.get_object('custom_icon_category_label');
+        const categoryIconCategoryBox = this._builder.get_object('category_icon_category_box');
+        const categoryIconCategoryLabel = this._builder.get_object('category_icon_category_label');
         const categories = [...new Set(
             Gio.AppInfo.get_all()
                 .flatMap(a => (a.get_categories() ?? '').split(';').filter(c => c))
@@ -716,59 +716,59 @@ const DockSettings = GObject.registerClass({
             halign: Gtk.Align.END,
             valign: Gtk.Align.CENTER,
         });
-        const currentCat = this._settings.get_string('custom-icon-category');
+        const currentCat = this._settings.get_string('category-icon-category');
         const initialIdx = categories.indexOf(currentCat);
         if (initialIdx >= 0)
             categoryDropdown.selected = initialIdx;
         categoryDropdown.connect('notify::selected', () => {
             const item = categoryModel.get_string(categoryDropdown.selected);
-            if (item && item !== this._settings.get_string('custom-icon-category'))
-                this._settings.set_string('custom-icon-category', item);
+            if (item && item !== this._settings.get_string('category-icon-category'))
+                this._settings.set_string('category-icon-category', item);
         });
-        this._settings.connect('changed::custom-icon-category', () => {
-            const cat = this._settings.get_string('custom-icon-category');
+        this._settings.connect('changed::category-icon-category', () => {
+            const cat = this._settings.get_string('category-icon-category');
             const idx = categories.indexOf(cat);
             if (idx >= 0 && idx !== categoryDropdown.selected)
                 categoryDropdown.selected = idx;
         });
-        customIconCategoryBox.append(categoryDropdown);
-        this._settings.bind('show-custom-icon-panel',
-            this._builder.get_object('custom_icon_panel_switch'),
+        categoryIconCategoryBox.append(categoryDropdown);
+        this._settings.bind('show-category-panel',
+            this._builder.get_object('category_panel_switch'),
             'active',
             Gio.SettingsBindFlags.DEFAULT);
-        this._settings.bind('show-custom-icon-panel',
-            customIconCategoryBox,
+        this._settings.bind('show-category-panel',
+            categoryIconCategoryBox,
             'sensitive',
             Gio.SettingsBindFlags.GET);
-        this._settings.bind('show-custom-icon-panel',
-            customIconCategoryLabel,
+        this._settings.bind('show-category-panel',
+            categoryIconCategoryLabel,
             'sensitive',
             Gio.SettingsBindFlags.GET);
-        const customIconNameRow = new Adw.EntryRow({
+        const categoryIconNameRow = new Adw.EntryRow({
             title: __('Icon name'),
         });
-        this._settings.bind('custom-icon-name',
-            customIconNameRow,
+        this._settings.bind('category-icon-name',
+            categoryIconNameRow,
             'text',
             Gio.SettingsBindFlags.DEFAULT);
-        this._settings.bind('show-custom-icon-panel',
-            customIconNameRow,
+        this._settings.bind('show-category-panel',
+            categoryIconNameRow,
             'sensitive',
             Gio.SettingsBindFlags.GET);
-        const customIconLabelRow = new Adw.EntryRow({
+        const categoryIconLabelRow = new Adw.EntryRow({
             title: __('Icon label'),
         });
-        this._settings.bind('custom-icon-label',
-            customIconLabelRow,
+        this._settings.bind('category-icon-label',
+            categoryIconLabelRow,
             'text',
             Gio.SettingsBindFlags.DEFAULT);
-        this._settings.bind('show-custom-icon-panel',
-            customIconLabelRow,
+        this._settings.bind('show-category-panel',
+            categoryIconLabelRow,
             'sensitive',
             Gio.SettingsBindFlags.GET);
         const listbox9 = this._builder.get_object('listbox9');
-        listbox9.append(customIconNameRow);
-        listbox9.append(customIconLabelRow);
+        listbox9.append(categoryIconNameRow);
+        listbox9.append(categoryIconLabelRow);
         this._settings.bind('dance-urgent-applications',
             this._builder.get_object('wiggle_urgent_applications_switch'),
             'active',

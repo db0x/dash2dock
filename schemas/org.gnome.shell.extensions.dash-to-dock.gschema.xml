@@ -281,30 +281,30 @@
       <summary>Isolate volumes, devices and trash windows</summary>
       <description>Consider volume, devices and trash as different application windows and not part of the file manager</description>
     </key>
-    <key type="b" name="show-custom-icon-panel">
+    <key type="b" name="show-category-panel">
       <default>true</default>
-      <summary>Show custom icon panel</summary>
-      <description>Show the custom icon panel launcher in the dock</description>
+      <summary>Show category panel</summary>
+      <description>Show the category icon launcher in the dock</description>
     </key>
-    <key type="s" name="custom-icon-category">
+    <key type="s" name="category-icon-category">
       <default>'d2dGames'</default>
-      <summary>Custom icon category</summary>
-      <description>Desktop category used to filter applications shown in the custom icon panel</description>
+      <summary>Category icon category</summary>
+      <description>Desktop category used to filter applications shown in the category panel</description>
     </key>
-    <key type="s" name="custom-icon-name">
+    <key type="s" name="category-icon-name">
       <default>'applications-games'</default>
-      <summary>Custom icon name</summary>
-      <description>Themed icon name used for the custom icon panel launcher in the dock</description>
+      <summary>Category icon name</summary>
+      <description>Themed icon name used for the category icon launcher in the dock</description>
     </key>
-    <key type="s" name="custom-icon-label">
+    <key type="s" name="category-icon-label">
       <default>'My Games'</default>
-      <summary>Custom icon label</summary>
-      <description>Display name for the custom icon panel launcher in the dock</description>
+      <summary>Category icon label</summary>
+      <description>Display name for the category icon launcher in the dock</description>
     </key>
-    <key type="i" name="custom-icon-position">
+    <key type="i" name="category-icon-position">
       <default>-1</default>
-      <summary>Custom icon position</summary>
-      <description>Position index of the custom icon in the dock (-1 = last)</description>
+      <summary>Category icon position</summary>
+      <description>Position index of the category icon in the dock (-1 = last)</description>
     </key>
     <key type="b" name="dance-urgent-applications">
       <default>true</default>

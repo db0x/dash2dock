@@ -467,7 +467,7 @@ export const DockDash = GObject.registerClass({
                 if (childApp && !childApp.isCustom)
                     appIndex++;
             }
-            Docking.DockManager.settings.set_int('custom-icon-position', appIndex);
+            Docking.DockManager.settings.set_int('category-icon-position', appIndex);
             this._clearDragPlaceholder();
             this._queueRedisplay();
             return true;
@@ -889,15 +889,15 @@ export const DockDash = GObject.registerClass({
             oldApps = oldApps.filter(app => !app.isTrash);
         }
 
-        // ── Custom App ──────────────────────────────────────────────
-        if (dockManager.customApp) {
-            const customApp = dockManager.customApp.getApp();
-            if (!newApps.includes(customApp)) {
-                const pos = settings.customIconPosition;
+        // ── Category Icon ───────────────────────────────────────────
+        if (dockManager.categoryIcon) {
+            const categoryApp = dockManager.categoryIcon.getApp();
+            if (!newApps.includes(categoryApp)) {
+                const pos = settings.categoryIconPosition;
                 if (pos >= 0 && pos <= newApps.length)
-                    newApps.splice(pos, 0, customApp);
+                    newApps.splice(pos, 0, categoryApp);
                 else
-                    newApps.push(customApp);
+                    newApps.push(categoryApp);
             }
         }
         // ───────────────────────────────────────────────────────────
@@ -1039,13 +1039,13 @@ export const DockDash = GObject.registerClass({
 
         addedItems.forEach(({item}) => item.show(animate));
 
-        // ── Custom App: sourceActor für Panel-Positionierung aktualisieren ──
-        if (dockManager.customApp) {
-            const customApp = dockManager.customApp.getApp();
-            const customChild = this._box.get_children().find(actor =>
-                actor.child?._delegate?.app === customApp);
-            if (customChild)
-                dockManager.customApp._sourceActor = customChild; // Container, nicht child
+        // ── Category Icon: sourceActor für Panel-Positionierung aktualisieren ──
+        if (dockManager.categoryIcon) {
+            const categoryApp = dockManager.categoryIcon.getApp();
+            const categoryChild = this._box.get_children().find(actor =>
+                actor.child?._delegate?.app === categoryApp);
+            if (categoryChild)
+                dockManager.categoryIcon._sourceActor = categoryChild; // Container, nicht child
         }
         // ───────────────────────────────────────────────────────────────────
 

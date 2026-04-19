@@ -1830,8 +1830,8 @@ export class DockManager {
         return this._trash;
     }
 
-    get customApp() {
-        return this._customApp;
+    get categoryIcon() {
+        return this._categoryIcon;
     }
 
     get desktopIconsUsableArea() {
@@ -1880,11 +1880,11 @@ export class DockManager {
         }
 
         // ── Custom App ──────────────────────────────────────────────
-        if (this.settings.showCustomIconPanel && !this._customApp) {
-            this._customApp = new Locations.CustomApp();
-        } else if (!this.settings.showCustomIconPanel && this._customApp) {
-            this._customApp.destroy();
-            this._customApp = null;
+        if (this.settings.showCategoryPanel && !this._categoryIcon) {
+            this._categoryIcon = new Locations.CategoryIcon();
+        } else if (!this.settings.showCategoryPanel && this._categoryIcon) {
+            this._categoryIcon.destroy();
+            this._categoryIcon = null;
         }
         // ───────────────────────────────────────────────────────────
 
@@ -2056,29 +2056,29 @@ export class DockManager {
             () => this._ensureLocations(),
         ], [
             this._settings,
-            'changed::show-custom-icon-panel',
+            'changed::show-category-panel',
             () => {
                 this._ensureLocations();
                 DockManager.allDocks.forEach(dock => dock.dash._queueRedisplay());
             },
         ], [
             this._settings,
-            'changed::custom-icon-name',
+            'changed::category-icon-name',
             () => {
-                if (this._customApp) {
-                    this._customApp.destroy();
-                    this._customApp = null;
+                if (this._categoryIcon) {
+                    this._categoryIcon.destroy();
+                    this._categoryIcon = null;
                 }
                 this._ensureLocations();
                 DockManager.allDocks.forEach(dock => dock.dash._queueRedisplay());
             },
         ], [
             this._settings,
-            'changed::custom-icon-label',
+            'changed::category-icon-label',
             () => {
-                if (this._customApp) {
-                    this._customApp.destroy();
-                    this._customApp = null;
+                if (this._categoryIcon) {
+                    this._categoryIcon.destroy();
+                    this._categoryIcon = null;
                 }
                 this._ensureLocations();
                 DockManager.allDocks.forEach(dock => dock.dash._queueRedisplay());
@@ -2630,8 +2630,8 @@ export class DockManager {
         this._appSpread.destroy();
         this._trash?.destroy();
         this._trash = null;
-        this._customApp?.destroy();
-        this._customApp = null;
+        this._categoryIcon?.destroy();
+        this._categoryIcon = null;
         Locations.unWrapFileManagerApp();
         this._removables?.destroy();
         this._removables = null;
