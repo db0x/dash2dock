@@ -434,6 +434,41 @@ export const DockDash = GObject.registerClass({
             }
         }
 
+        // The original handleDragOver clamps the placeholder to AppFavorites
+        // count. Custom category icons live beyond that boundary, so recompute
+        // the position ourselves – limited only by the separator.
+        if (sourceApp?.isCustom && this._dragPlaceholder) {
+            // x, y are in the dash's local coordinate space; get_transformed_position()
+            // returns global stage coordinates – convert the cursor to stage coords.
+            const [dashX, dashY] = this.get_transformed_position();
+            const coord = this._isHorizontal ? dashX + x : dashY + y;
+            const children = this._box.get_children();
+            const rawSepIdx = this._separator ? children.indexOf(this._separator) : -1;
+            const sepIdx = rawSepIdx >= 0 ? rawSepIdx : children.length;
+
+            let newPos = 0;
+            for (let i = sepIdx - 1; i >= 0; i--) {
+                const child = children[i];
+                if (child === this._dragPlaceholder) continue;
+                const [cx, cy] = child.get_transformed_position();
+                const [cw, ch] = child.get_transformed_size();
+                const mid = this._isHorizontal ? cx + cw / 2 : cy + ch / 2;
+                if (coord > mid) {
+                    // placeholder before i shifts i left by 1; use i directly.
+                    newPos = i > this._dragPlaceholderPos ? i : i + 1;
+                    break;
+                }
+            }
+
+            if (newPos !== this._dragPlaceholderPos) {
+                this._dragPlaceholderPos = newPos;
+                this._box.set_child_at_index(this._dragPlaceholder, newPos);
+            }
+
+            if (ret === DND.DragMotionResult.COPY_DROP)
+                ret = DND.DragMotionResult.MOVE_DROP;
+        }
+
         if (this._dragPlaceholder) {
             // Ensure the next and previous icon are visible when moving the
             // placeholder (we're assuming there's room for both of them)
@@ -449,9 +484,6 @@ export const DockDash = GObject.registerClass({
                     children[this._dragPlaceholderPos + 1]);
             }
         }
-
-        if (sourceApp?.isCustom && ret === DND.DragMotionResult.COPY_DROP)
-            ret = DND.DragMotionResult.MOVE_DROP;
 
         return ret;
     }
@@ -905,11 +937,22 @@ export const DockDash = GObject.registerClass({
         for (const ci of dockManager.categoryIcons) {
             const categoryApp = ci.getApp();
             if (!newApps.includes(categoryApp)) {
-                const pos = ci.position;
-                if (pos >= 0 && pos <= newApps.length)
-                    newApps.splice(pos, 0, categoryApp);
-                else
+                const regPos = ci.position;
+                if (regPos >= 0) {
+                    let regularCount = 0;
+                    let insertIdx = newApps.length;
+                    for (let i = 0; i < newApps.length; i++) {
+                        if (regularCount === regPos) {
+                            insertIdx = i;
+                            break;
+                        }
+                        if (!newApps[i].isCustom)
+                            regularCount++;
+                    }
+                    newApps.splice(insertIdx, 0, categoryApp);
+                } else {
                     newApps.push(categoryApp);
+                }
             }
         }
         // ───────────────────────────────────────────────────────────
