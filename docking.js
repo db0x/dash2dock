@@ -1830,8 +1830,8 @@ export class DockManager {
         return this._trash;
     }
 
-    get categoryIcon() {
-        return this._categoryIcon;
+    get categoryIcons() {
+        return this._categoryIcons ?? [];
     }
 
     get desktopIconsUsableArea() {
@@ -1879,12 +1879,27 @@ export class DockManager {
             this._trash = null;
         }
 
-        // ── Custom App ──────────────────────────────────────────────
-        if (this.settings.showCategoryPanel && !this._categoryIcon) {
-            this._categoryIcon = new Locations.CategoryIcon();
-        } else if (!this.settings.showCategoryPanel && this._categoryIcon) {
-            this._categoryIcon.destroy();
-            this._categoryIcon = null;
+        // ── Category Icons ──────────────────────────────────────────
+        if (!this._categoryIcons)
+            this._categoryIcons = [];
+
+        let configs = [];
+        try {
+            configs = JSON.parse(this._settings.get_string('category-icons'));
+        } catch (_e) {}
+        if (!Array.isArray(configs))
+            configs = [];
+
+        // Destroy surplus icons
+        while (this._categoryIcons.length > configs.length)
+            this._categoryIcons.pop().destroy();
+
+        // Update existing / create new
+        for (let i = 0; i < configs.length; i++) {
+            if (this._categoryIcons[i])
+                this._categoryIcons[i].updateConfig(configs[i]);
+            else
+                this._categoryIcons[i] = new Locations.CategoryIcon(configs[i]);
         }
         // ───────────────────────────────────────────────────────────
 
@@ -2056,30 +2071,8 @@ export class DockManager {
             () => this._ensureLocations(),
         ], [
             this._settings,
-            'changed::show-category-panel',
+            'changed::category-icons',
             () => {
-                this._ensureLocations();
-                DockManager.allDocks.forEach(dock => dock.dash._queueRedisplay());
-            },
-        ], [
-            this._settings,
-            'changed::category-icon-name',
-            () => {
-                if (this._categoryIcon) {
-                    this._categoryIcon.destroy();
-                    this._categoryIcon = null;
-                }
-                this._ensureLocations();
-                DockManager.allDocks.forEach(dock => dock.dash._queueRedisplay());
-            },
-        ], [
-            this._settings,
-            'changed::category-icon-label',
-            () => {
-                if (this._categoryIcon) {
-                    this._categoryIcon.destroy();
-                    this._categoryIcon = null;
-                }
                 this._ensureLocations();
                 DockManager.allDocks.forEach(dock => dock.dash._queueRedisplay());
             },
@@ -2630,8 +2623,8 @@ export class DockManager {
         this._appSpread.destroy();
         this._trash?.destroy();
         this._trash = null;
-        this._categoryIcon?.destroy();
-        this._categoryIcon = null;
+        this._categoryIcons?.forEach(ci => ci.destroy());
+        this._categoryIcons = [];
         Locations.unWrapFileManagerApp();
         this._removables?.destroy();
         this._removables = null;

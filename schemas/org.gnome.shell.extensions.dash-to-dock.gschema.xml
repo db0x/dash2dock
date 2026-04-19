@@ -281,30 +281,10 @@
       <summary>Isolate volumes, devices and trash windows</summary>
       <description>Consider volume, devices and trash as different application windows and not part of the file manager</description>
     </key>
-    <key type="b" name="show-category-panel">
-      <default>true</default>
-      <summary>Show category panel</summary>
-      <description>Show the category icon launcher in the dock</description>
-    </key>
-    <key type="s" name="category-icon-category">
-      <default>'d2dGames'</default>
-      <summary>Category icon category</summary>
-      <description>Desktop category used to filter applications shown in the category panel</description>
-    </key>
-    <key type="s" name="category-icon-name">
-      <default>'applications-games'</default>
-      <summary>Category icon name</summary>
-      <description>Themed icon name used for the category icon launcher in the dock</description>
-    </key>
-    <key type="s" name="category-icon-label">
-      <default>'My Games'</default>
-      <summary>Category icon label</summary>
-      <description>Display name for the category icon launcher in the dock</description>
-    </key>
-    <key type="i" name="category-icon-position">
-      <default>-1</default>
-      <summary>Category icon position</summary>
-      <description>Position index of the category icon in the dock (-1 = last)</description>
+    <key type="s" name="category-icons">
+      <default>'[{"name":"applications-games","label":"My Games","category":"d2dGames","position":-1}]'</default>
+      <summary>Category icons</summary>
+      <description>JSON array of category icon configs: [{name, label, category, position}]</description>
     </key>
     <key type="b" name="dance-urgent-applications">
       <default>true</default>

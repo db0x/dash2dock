@@ -459,15 +459,27 @@ export const DockDash = GObject.registerClass({
     acceptDrop(source, actor, x, y, time) {
         const sourceApp = source?.app ?? source?._delegate?.app;
         if (sourceApp?.isCustom && this._dragPlaceholderPos !== -1) {
-            const children = this._box.get_children();
-            let appIndex = 0;
-            for (let i = 0; i < this._dragPlaceholderPos; i++) {
-                const child = children[i];
-                const childApp = child.child?._delegate?.app;
-                if (childApp && !childApp.isCustom)
-                    appIndex++;
+            const icons = Docking.DockManager.getDefault().categoryIcons;
+            const iconIdx = icons.findIndex(ci => ci.getApp() === sourceApp);
+            if (iconIdx >= 0) {
+                const children = this._box.get_children();
+                let appIndex = 0;
+                for (let i = 0; i < this._dragPlaceholderPos; i++) {
+                    const child = children[i];
+                    const childApp = child.child?._delegate?.app;
+                    if (childApp && !childApp.isCustom)
+                        appIndex++;
+                }
+                let configs = [];
+                try {
+                    configs = JSON.parse(Docking.DockManager.settings.get_string('category-icons'));
+                } catch (_e) {}
+                if (Array.isArray(configs) && configs[iconIdx]) {
+                    configs[iconIdx].position = appIndex;
+                    Docking.DockManager.settings.set_string(
+                        'category-icons', JSON.stringify(configs));
+                }
             }
-            Docking.DockManager.settings.set_int('category-icon-position', appIndex);
             this._clearDragPlaceholder();
             this._queueRedisplay();
             return true;
@@ -889,11 +901,11 @@ export const DockDash = GObject.registerClass({
             oldApps = oldApps.filter(app => !app.isTrash);
         }
 
-        // ── Category Icon ───────────────────────────────────────────
-        if (dockManager.categoryIcon) {
-            const categoryApp = dockManager.categoryIcon.getApp();
+        // ── Category Icons ──────────────────────────────────────────
+        for (const ci of dockManager.categoryIcons) {
+            const categoryApp = ci.getApp();
             if (!newApps.includes(categoryApp)) {
-                const pos = settings.categoryIconPosition;
+                const pos = ci.position;
                 if (pos >= 0 && pos <= newApps.length)
                     newApps.splice(pos, 0, categoryApp);
                 else
@@ -1039,13 +1051,13 @@ export const DockDash = GObject.registerClass({
 
         addedItems.forEach(({item}) => item.show(animate));
 
-        // ── Category Icon: sourceActor für Panel-Positionierung aktualisieren ──
-        if (dockManager.categoryIcon) {
-            const categoryApp = dockManager.categoryIcon.getApp();
+        // ── Category Icons: sourceActor für Panel-Positionierung aktualisieren ──
+        for (const ci of dockManager.categoryIcons) {
+            const categoryApp = ci.getApp();
             const categoryChild = this._box.get_children().find(actor =>
                 actor.child?._delegate?.app === categoryApp);
             if (categoryChild)
-                dockManager.categoryIcon._sourceActor = categoryChild; // Container, nicht child
+                ci._sourceActor = categoryChild; // Container, nicht child
         }
         // ───────────────────────────────────────────────────────────────────
 

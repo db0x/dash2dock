@@ -703,72 +703,7 @@ const DockSettings = GObject.registerClass({
         updateIsolateLocations();
         isolateLocationsBindings.forEach(s => this._builder.get_object(s).connect(
             'notify::active', () => updateIsolateLocations()));
-        const categoryIconCategoryBox = this._builder.get_object('category_icon_category_box');
-        const categoryIconCategoryLabel = this._builder.get_object('category_icon_category_label');
-        const categories = [...new Set(
-            Gio.AppInfo.get_all()
-                .flatMap(a => (a.get_categories() ?? '').split(';').filter(c => c))
-        )].sort();
-        const categoryModel = new Gtk.StringList();
-        categories.forEach(cat => categoryModel.append(cat));
-        const categoryDropdown = new Gtk.DropDown({
-            model: categoryModel,
-            halign: Gtk.Align.END,
-            valign: Gtk.Align.CENTER,
-        });
-        const currentCat = this._settings.get_string('category-icon-category');
-        const initialIdx = categories.indexOf(currentCat);
-        if (initialIdx >= 0)
-            categoryDropdown.selected = initialIdx;
-        categoryDropdown.connect('notify::selected', () => {
-            const item = categoryModel.get_string(categoryDropdown.selected);
-            if (item && item !== this._settings.get_string('category-icon-category'))
-                this._settings.set_string('category-icon-category', item);
-        });
-        this._settings.connect('changed::category-icon-category', () => {
-            const cat = this._settings.get_string('category-icon-category');
-            const idx = categories.indexOf(cat);
-            if (idx >= 0 && idx !== categoryDropdown.selected)
-                categoryDropdown.selected = idx;
-        });
-        categoryIconCategoryBox.append(categoryDropdown);
-        this._settings.bind('show-category-panel',
-            this._builder.get_object('category_panel_switch'),
-            'active',
-            Gio.SettingsBindFlags.DEFAULT);
-        this._settings.bind('show-category-panel',
-            categoryIconCategoryBox,
-            'sensitive',
-            Gio.SettingsBindFlags.GET);
-        this._settings.bind('show-category-panel',
-            categoryIconCategoryLabel,
-            'sensitive',
-            Gio.SettingsBindFlags.GET);
-        const categoryIconNameRow = new Adw.EntryRow({
-            title: __('Icon name'),
-        });
-        this._settings.bind('category-icon-name',
-            categoryIconNameRow,
-            'text',
-            Gio.SettingsBindFlags.DEFAULT);
-        this._settings.bind('show-category-panel',
-            categoryIconNameRow,
-            'sensitive',
-            Gio.SettingsBindFlags.GET);
-        const categoryIconLabelRow = new Adw.EntryRow({
-            title: __('Icon label'),
-        });
-        this._settings.bind('category-icon-label',
-            categoryIconLabelRow,
-            'text',
-            Gio.SettingsBindFlags.DEFAULT);
-        this._settings.bind('show-category-panel',
-            categoryIconLabelRow,
-            'sensitive',
-            Gio.SettingsBindFlags.GET);
-        const listbox9 = this._builder.get_object('listbox9');
-        listbox9.append(categoryIconNameRow);
-        listbox9.append(categoryIconLabelRow);
+        this._setupCategoryIcons();
         this._settings.bind('dance-urgent-applications',
             this._builder.get_object('wiggle_urgent_applications_switch'),
             'active',
@@ -1223,6 +1158,211 @@ const DockSettings = GObject.registerClass({
 
         this._builder.get_object('extension_version').set_label(
             `${this._extensionPreferences.metadata.version}`);
+    }
+
+    _setupCategoryIcons() {
+        const container = this._builder.get_object('category_icons_box');
+
+        const categories = [...new Set(
+            Gio.AppInfo.get_all()
+                .flatMap(a => (a.get_categories() ?? '').split(';').filter(c => c))
+        )].sort();
+
+        const iconsListBox = new Gtk.ListBox({
+            selection_mode: Gtk.SelectionMode.NONE,
+            css_classes: ['boxed-list'],
+        });
+        container.append(iconsListBox);
+
+        const addButton = new Gtk.Button({
+            label: __('Add Category Icon'),
+            halign: Gtk.Align.CENTER,
+            margin_top: 8,
+            margin_bottom: 8,
+            css_classes: ['suggested-action'],
+        });
+        container.append(addButton);
+
+        const readConfigs = () => {
+            try {
+                return JSON.parse(this._settings.get_string('category-icons'));
+            } catch (_e) { return []; }
+        };
+
+        let _writingFromUI = false;
+        const writeConfigs = configs => {
+            _writingFromUI = true;
+            this._settings.set_string('category-icons', JSON.stringify(configs));
+            _writingFromUI = false;
+        };
+
+        const rebuildList = () => {
+            let child = iconsListBox.get_first_child();
+            while (child) {
+                const next = child.get_next_sibling();
+                iconsListBox.remove(child);
+                child = next;
+            }
+
+            const configs = readConfigs();
+
+            if (configs.length === 0) {
+                const emptyRow = new Gtk.ListBoxRow({activatable: false});
+                const emptyLabel = new Gtk.Label({
+                    label: __('No category icons configured. Click "Add Category Icon" to add one.'),
+                    margin_top: 12,
+                    margin_bottom: 12,
+                    margin_start: 12,
+                    margin_end: 12,
+                    wrap: true,
+                    css_classes: ['dim-label'],
+                });
+                emptyRow.set_child(emptyLabel);
+                iconsListBox.append(emptyRow);
+            } else {
+                configs.forEach((cfg, idx) => {
+                    iconsListBox.append(
+                        this._buildCategoryIconRow(cfg, idx, categories, readConfigs, writeConfigs, rebuildList));
+                });
+            }
+        };
+
+        this._settings.connect('changed::category-icons', () => {
+            if (!_writingFromUI)
+                rebuildList();
+        });
+
+        addButton.connect('clicked', () => {
+            const configs = readConfigs();
+            configs.push({
+                name: 'applications-games',
+                label: __('New Category'),
+                category: 'Game',
+                position: -1,
+            });
+            writeConfigs(configs);
+            rebuildList();
+        });
+
+        rebuildList();
+    }
+
+    _buildCategoryIconRow(cfg, idx, categories, readConfigs, writeConfigs, rebuildList) {
+        const row = new Gtk.ListBoxRow({activatable: false});
+        const vbox = new Gtk.Box({
+            orientation: Gtk.Orientation.VERTICAL,
+            margin_top: 4,
+            margin_bottom: 4,
+            margin_start: 4,
+            margin_end: 4,
+            spacing: 0,
+        });
+
+        // ── Header: title + remove button ──
+        const header = new Gtk.Box({
+            orientation: Gtk.Orientation.HORIZONTAL,
+            margin_start: 8,
+            margin_end: 4,
+            margin_top: 8,
+            margin_bottom: 4,
+            spacing: 8,
+        });
+        const titleLabel = new Gtk.Label({
+            label: cfg.label || __('Category Icon'),
+            hexpand: true,
+            halign: Gtk.Align.START,
+            css_classes: ['heading'],
+        });
+        const removeBtn = new Gtk.Button({
+            icon_name: 'list-remove-symbolic',
+            valign: Gtk.Align.CENTER,
+            tooltip_text: __('Remove'),
+            css_classes: ['flat', 'circular'],
+        });
+        header.append(titleLabel);
+        header.append(removeBtn);
+
+        // ── Detail fields ──
+        const detailsBox = new Gtk.ListBox({
+            selection_mode: Gtk.SelectionMode.NONE,
+            css_classes: ['boxed-list'],
+            margin_top: 4,
+        });
+
+        // Label entry
+        const labelRow = new Adw.EntryRow({title: __('Label')});
+        labelRow.text = cfg.label ?? '';
+        labelRow.connect('notify::text', () => {
+            const configs = readConfigs();
+            if (!configs[idx])
+                return;
+            configs[idx].label = labelRow.text;
+            titleLabel.label = labelRow.text || __('Category Icon');
+            writeConfigs(configs);
+        });
+        detailsBox.append(labelRow);
+
+        // Icon name entry
+        const nameRow = new Adw.EntryRow({title: __('Icon name')});
+        nameRow.text = cfg.name ?? '';
+        nameRow.connect('notify::text', () => {
+            const configs = readConfigs();
+            if (!configs[idx])
+                return;
+            configs[idx].name = nameRow.text;
+            writeConfigs(configs);
+        });
+        detailsBox.append(nameRow);
+
+        // Category dropdown row
+        const catRow = new Gtk.ListBoxRow({activatable: false});
+        const catBox = new Gtk.Box({
+            orientation: Gtk.Orientation.HORIZONTAL,
+            margin_start: 12,
+            margin_end: 12,
+            margin_top: 10,
+            margin_bottom: 10,
+            spacing: 12,
+        });
+        const catLabel = new Gtk.Label({
+            label: __('Category'),
+            hexpand: true,
+            halign: Gtk.Align.START,
+        });
+        const categoryModel = new Gtk.StringList();
+        categories.forEach(cat => categoryModel.append(cat));
+        const dropdown = new Gtk.DropDown({
+            model: categoryModel,
+            halign: Gtk.Align.END,
+            valign: Gtk.Align.CENTER,
+        });
+        const catIdx = categories.indexOf(cfg.category ?? '');
+        if (catIdx >= 0)
+            dropdown.selected = catIdx;
+        dropdown.connect('notify::selected', () => {
+            const item = categoryModel.get_string(dropdown.selected);
+            const configs = readConfigs();
+            if (item && configs[idx]) {
+                configs[idx].category = item;
+                writeConfigs(configs);
+            }
+        });
+        catBox.append(catLabel);
+        catBox.append(dropdown);
+        catRow.set_child(catBox);
+        detailsBox.append(catRow);
+
+        removeBtn.connect('clicked', () => {
+            const configs = readConfigs();
+            configs.splice(idx, 1);
+            writeConfigs(configs);
+            rebuildList();
+        });
+
+        vbox.append(header);
+        vbox.append(detailsBox);
+        row.set_child(vbox);
+        return row;
     }
 });
 

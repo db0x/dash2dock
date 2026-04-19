@@ -1366,8 +1366,9 @@ export class Trash {
  * wenn auf das Category Icon geklickt wird.
  */
 class CategoryPanel {
-    constructor(sourceActor, onClose) {
+    constructor(sourceActor, category, onClose) {
         this._sourceActor = sourceActor;
+        this._category = category;
         this._onClose = onClose;
 
         const mainDock = Docking.DockManager.getDefault().mainDock;
@@ -1445,7 +1446,7 @@ class CategoryPanel {
             .get_installed()
             .filter(info => {
                 const cats = info.get_categories() ?? '';
-                const category = Docking.DockManager.settings.categoryIconCategory || 'd2dGames';
+                const category = this._category || 'd2dGames';
                 return info.should_show() && cats.includes(category);
             })
             .map(info => Shell.AppSystem.get_default().lookup_app(info.get_id()))
@@ -1720,10 +1721,31 @@ class CategoryPanel {
 }
 
 /**
- * Hält ein Shell.App-Objekt für das Category Icon,
+ * Hält ein Shell.App-Objekt für ein Category Icon,
  * analog zur Trash-Klasse – aber ohne eigene AppInfo-Subklasse.
+ * config: {name, label, category, position}
  */
 export class CategoryIcon {
+    constructor(config) {
+        this._config = config ?? {};
+    }
+
+    get position() {
+        return this._config.position ?? -1;
+    }
+
+    updateConfig(config) {
+        const changed =
+            config.name !== this._config.name ||
+            config.label !== this._config.label ||
+            config.category !== this._config.category;
+        this._config = config;
+        if (changed) {
+            this._app?.destroy();
+            this._app = null;
+        }
+    }
+
     destroy() {
         this._panel?.destroy();
         this._panel = null;
@@ -1735,9 +1757,9 @@ export class CategoryIcon {
         if (this._app)
             return;
 
-        const iconName = Docking.DockManager.settings.categoryIconName || 'applications-games';
+        const iconName = this._config.name || 'applications-games';
         const appInfo = new LocationAppInfo({
-            name: Docking.DockManager.settings.categoryIconLabel || 'My Games',
+            name: this._config.label || 'My Games',
             icon: Gio.ThemedIcon.new(iconName),
             cancellable: new Gio.Cancellable(),
         });
@@ -1767,7 +1789,7 @@ export class CategoryIcon {
 
     /**
      * Wird vom AppIcon aufgerufen wenn auf das Icon geklickt wird.
-     * Öffnet/schließt das 4×4 Panel über dem Dock.
+     * Öffnet/schließt das Panel über dem Dock.
      */
     togglePanel(sourceActor) {
         if (this._panel) {
@@ -1776,8 +1798,7 @@ export class CategoryIcon {
             return;
         }
 
-        this._panel = new CategoryPanel(sourceActor, () => {
-            // Callback wenn Panel sich selbst schließt
+        this._panel = new CategoryPanel(sourceActor, this._config.category, () => {
             this._panel = null;
         });
         this._panel.open();
