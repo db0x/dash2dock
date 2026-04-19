@@ -1384,7 +1384,6 @@ class CustomIconPanel {
             layout_manager: new Clutter.BinLayout(),
             reactive: true,
             visible: false,
-            opacity: 0,
         });
 
         // Innerer #dash-Actor – entspricht dem DockDash-Widget
@@ -1474,6 +1473,14 @@ class CustomIconPanel {
                 if (app) {
                     const item = dash.createPanelItem(app);
                     item.show(false);
+                    // CSS-Transitions auf dem StButton deaktivieren: das CSS-Stylesheet
+                    // setzt transition-duration: 250 auf .dash-item-container > StButton.
+                    // Beim ersten Erscheinen des Panels würde diese Transition Padding/Size
+                    // von 0 → Endwert animieren und nach unserer Panel-Animation einen
+                    // Squish-Effekt erzeugen (besonders deutlich bei vielen Icons).
+                    item.set_style('transition-duration: 0ms;');
+                    if (item.child)
+                        item.child.set_style('transition-duration: 0ms;');
                     item.child?.connectObject('clicked', () => this.close(), this.actor);
                     rowBox.add_child(item);
                 } else {
@@ -1519,11 +1526,57 @@ class CustomIconPanel {
             this._dash.requiresVisibility = true;
 
         this._syncTheme();
-        this.actor.show();
-        this.actor.ensure_style();
-        this._reposition();
 
-        this.actor.ease({opacity: 255, duration: 150, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+        // Pivot-Point Richtung Dock, damit das Panel aus dem Icon herauswächst
+        switch (this._position) {
+        case St.Side.BOTTOM:
+            this.actor.set_pivot_point(0.5, 1.0); break;
+        case St.Side.TOP:
+            this.actor.set_pivot_point(0.5, 0.0); break;
+        case St.Side.LEFT:
+            this.actor.set_pivot_point(0.0, 0.5); break;
+        case St.Side.RIGHT:
+            this.actor.set_pivot_point(1.0, 0.5); break;
+        default:
+            this.actor.set_pivot_point(0.5, 1.0);
+        }
+        // scale=0 ist CSS-immun: CSS kann opacity überschreiben, aber nicht scale.
+        // Bei scale=0 ist der Actor unsichtbar unabhängig von opacity.
+        // Off-screen extra-Sicherheit während des ersten Layout-Passes.
+        this.actor.set({scale_x: 0, scale_y: 0});
+        this.actor.set_position(-10000, -10000);
+        this.actor.show();
+
+        // notify::allocation: erster Layout-Pass unseres Actors.
+        // Der sizerBox-BindConstraint (background ↔ dashContainer) erzeugt aber
+        // zwingend einen ZWEITEN Layout-Pass. Deshalb warten wir danach auf
+        // after-paint – erst dann sind alle Layout-Passes abgeschlossen und
+        // get_preferred_size() liefert stabile Werte.
+        const allocationId = this.actor.connect('notify::allocation', () => {
+            this.actor.disconnect(allocationId);
+            if (!this.isOpen)
+                return;
+            this._reposition();
+
+            const paintId = global.stage.connect('after-paint', () => {
+                global.stage.disconnect(paintId);
+                if (!this.isOpen)
+                    return;
+                this._reposition();
+                // Größe einfrieren: verhindert dass externe Relayouts (Dock-Animation,
+                // CSS-Transitions, Shell.Stack-Reallokation) die Panel-Größe nachträglich
+                // verändern und den Squish-Effekt erzeugen.
+                const [, , w, h] = this.actor.get_preferred_size();
+                this.actor.set_size(w, h);
+                this.actor.ease({
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    duration: 220,
+                    mode: Clutter.AnimationMode.EASE_OUT_EXPO,
+                    onComplete: () => this._reposition(),
+                });
+            });
+        });
 
         // Labels der Dock-Icons über unser Panel heben (z-order Fix)
         Main.uiGroup.get_children().forEach(child => {
@@ -1645,9 +1698,10 @@ class CustomIconPanel {
         }
         this._onClose?.();
         this.actor?.ease({
-            opacity: 0,
-            duration: 100,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            scale_x: 0,
+            scale_y: 0,
+            duration: 150,
+            mode: Clutter.AnimationMode.EASE_IN_BACK,
             onComplete: () => this.destroy(),
         });
     }
