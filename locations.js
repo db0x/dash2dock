@@ -1450,7 +1450,8 @@ class CategoryPanel {
                 return info.should_show() && cats.includes(category);
             })
             .map(info => Shell.AppSystem.get_default().lookup_app(info.get_id()))
-            .filter(app => app !== null);
+            .filter(app => app !== null)
+            .sort((a, b) => a.get_name().localeCompare(b.get_name()));
 
         const appCount = apps.length;
         if (appCount === 0)
@@ -1472,6 +1473,12 @@ class CategoryPanel {
 
                 if (app) {
                     const item = dash.createPanelItem(app);
+                    if (item.child?._draggable) {
+                        item.child.connect('button-press-event', () => {
+                            item.child._draggable.fakeRelease?.();
+                            return Clutter.EVENT_PROPAGATE;
+                        });
+                    }
                     item.show(false);
                     // CSS-Transitions auf dem StButton deaktivieren: das CSS-Stylesheet
                     // setzt transition-duration: 250 auf .dash-item-container > StButton.

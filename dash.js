@@ -495,21 +495,46 @@ export const DockDash = GObject.registerClass({
             const iconIdx = icons.findIndex(ci => ci.getApp() === sourceApp);
             if (iconIdx >= 0) {
                 const children = this._box.get_children();
-                let appIndex = 0;
-                for (let i = 0; i < this._dragPlaceholderPos; i++) {
-                    const child = children[i];
-                    const childApp = child.child?._delegate?.app;
-                    if (childApp && !childApp.isCustom)
-                        appIndex++;
-                }
                 let configs = [];
                 try {
                     configs = JSON.parse(Docking.DockManager.settings.get_string('category-icons'));
                 } catch (_e) {}
                 if (Array.isArray(configs) && configs[iconIdx]) {
+                    // Count non-custom apps before the placeholder to get the new position.
+                    let appIndex = 0;
+                    for (let i = 0; i < this._dragPlaceholderPos; i++) {
+                        const childApp = children[i].child?._delegate?.app;
+                        if (childApp && !childApp.isCustom)
+                            appIndex++;
+                    }
                     configs[iconIdx].position = appIndex;
+
+                    // Reorder configs to match the final visual order of all category
+                    // icons (placeholder marks the new position of the dragged icon;
+                    // the original slot of the dragged icon is skipped).  The array
+                    // order is used as a tiebreaker in _redisplay() when two icons
+                    // share the same position value.
+                    const orderedIndices = [];
+                    for (const child of children) {
+                        if (child === this._dragPlaceholder) {
+                            orderedIndices.push(iconIdx);
+                        } else {
+                            const childApp = child.child?._delegate?.app;
+                            if (childApp?.isCustom && childApp !== sourceApp) {
+                                const idx = icons.findIndex(ci => ci.getApp() === childApp);
+                                if (idx >= 0)
+                                    orderedIndices.push(idx);
+                            }
+                        }
+                    }
+                    for (let i = 0; i < configs.length; i++) {
+                        if (!orderedIndices.includes(i))
+                            orderedIndices.push(i);
+                    }
+
                     Docking.DockManager.settings.set_string(
-                        'category-icons', JSON.stringify(configs));
+                        'category-icons',
+                        JSON.stringify(orderedIndices.map(i => configs[i])));
                 }
             }
             this._clearDragPlaceholder();
@@ -934,27 +959,41 @@ export const DockDash = GObject.registerClass({
         }
 
         // ── Category Icons ──────────────────────────────────────────
+        // Split into icons with an explicit position and icons that are
+        // simply appended.  Positioned icons are inserted in *reverse*
+        // array order so that, when two icons share the same position
+        // value, each splice pushes the previous one right and the final
+        // visual order matches the array order (the tiebreaker written by
+        // acceptDrop).  Appended icons are pushed in forward array order.
+        const ciPositioned = [];
+        const ciAppended = [];
         for (const ci of dockManager.categoryIcons) {
-            const categoryApp = ci.getApp();
-            if (!newApps.includes(categoryApp)) {
-                const regPos = ci.position;
-                if (regPos >= 0) {
-                    let regularCount = 0;
-                    let insertIdx = newApps.length;
-                    for (let i = 0; i < newApps.length; i++) {
-                        if (regularCount === regPos) {
-                            insertIdx = i;
-                            break;
-                        }
-                        if (!newApps[i].isCustom)
-                            regularCount++;
-                    }
-                    newApps.splice(insertIdx, 0, categoryApp);
-                } else {
-                    newApps.push(categoryApp);
-                }
+            if (!newApps.includes(ci.getApp())) {
+                if (ci.position >= 0)
+                    ciPositioned.push(ci);
+                else
+                    ciAppended.push(ci);
             }
         }
+
+        for (let k = ciPositioned.length - 1; k >= 0; k--) {
+            const ci = ciPositioned[k];
+            const regPos = ci.position;
+            let regularCount = 0;
+            let insertIdx = newApps.length;
+            for (let i = 0; i < newApps.length; i++) {
+                if (regularCount === regPos) {
+                    insertIdx = i;
+                    break;
+                }
+                if (!newApps[i].isCustom)
+                    regularCount++;
+            }
+            newApps.splice(insertIdx, 0, ci.getApp());
+        }
+
+        for (const ci of ciAppended)
+            newApps.push(ci.getApp());
         // ───────────────────────────────────────────────────────────
 
         // Temporary remove the separator so that we don't compute to position icons
