@@ -5,6 +5,7 @@ import {
     Gio,
     GLib,
     GObject,
+    Meta,
     Shell,
     St,
 } from './dependencies/gi.js';
@@ -37,6 +38,15 @@ const DASH_VISIBILITY_TIMEOUT = 3;
 const Labels = Object.freeze({
     SHOW_MOUNTS: Symbol('show-mounts'),
     FIRST_LAST_CHILD_WORKAROUND: Symbol('first-last-child-workaround'),
+});
+
+// DragPlaceholderItem is not exported by GNOME Shell — define an equivalent locally.
+const DragPlaceholderItem = GObject.registerClass(
+class DragPlaceholderItem extends Dash.DashItemContainer {
+    _init() {
+        super._init();
+        this.setChild(new St.Bin({style_class: 'placeholder'}));
+    }
 });
 
 /**
@@ -383,165 +393,222 @@ export const DockDash = GObject.registerClass({
         return Dash.Dash.prototype._syncLabel.call(this, ...args);
     }
 
-    _clearDragPlaceholder(...args) {
-        return Dash.Dash.prototype._clearDragPlaceholder.call(this, ...args);
-    }
-
     _clearEmptyDropTarget(...args) {
         return Dash.Dash.prototype._clearEmptyDropTarget.call(this, ...args);
     }
 
     handleDragOver(source, actor, x, y, time) {
-        let ret;
-        const sourceApp = source?.app ?? source?._delegate?.app;
+        const app = source?.app ?? source?._delegate?.app;
+        if (!app)
+            return DND.DragMotionResult.NO_DROP;
+
+        const isCustom = !!app.isCustom;
+        if (!isCustom) {
+            if (app.is_window_backed())
+                return DND.DragMotionResult.NO_DROP;
+            if (!global.settings.is_writable('favorite-apps'))
+                return DND.DragMotionResult.NO_DROP;
+        }
+
+        // Convert local coords to stage-space along the dock axis.
+        const [dashX, dashY] = this.get_transformed_position();
+        const cursor = this._isHorizontal ? dashX + x : dashY + y;
+
+        // Build "clean" children: box contents up to (not including) the
+        // separator, with the current placeholder excluded so midpoint
+        // calculations aren't distorted by it.
+        const children = this._box.get_children();
+        const rawSepIdx = this._separator ? children.indexOf(this._separator) : -1;
+        const limit = rawSepIdx >= 0 ? rawSepIdx : children.length;
+
+        const clean = [];
+        for (let i = 0; i < limit; i++) {
+            if (children[i] !== this._dragPlaceholder)
+                clean.push(children[i]);
+        }
+
+        // Determine insertion index using midpoints (works for both H and V,
+        // no axis-swapping hacks required).
+        let insertPos = clean.length; // default: append before separator
+        for (let i = 0; i < clean.length; i++) {
+            const [cx, cy] = clean[i].get_transformed_position();
+            const [cw, ch] = clean[i].get_transformed_size();
+            const mid = this._isHorizontal ? cx + cw / 2 : cy + ch / 2;
+            if (cursor <= mid) {
+                insertPos = i;
+                break;
+            }
+        }
+
+        // For regular favorites: suppress placeholder when the cursor is at
+        // the icon's own current position (no-op move).
+        if (!isCustom) {
+            const favorites = AppFavorites.getAppFavorites().getFavorites();
+            const favPos = favorites.indexOf(app);
+            if (favPos !== -1) {
+                let favsBefore = 0;
+                for (let i = 0; i < insertPos; i++) {
+                    const ca = clean[i].child?._delegate?.app;
+                    if (ca && ca !== app && !ca.isCustom) favsBefore++;
+                }
+                if (favsBefore === favPos || favsBefore === favPos + 1) {
+                    this._clearDragPlaceholder();
+                    return DND.DragMotionResult.CONTINUE;
+                }
+            }
+        }
+
+        // Create placeholder on first drag event.
+        let animate = false;
+        if (!this._dragPlaceholder) {
+            this._dragPlaceholder = new DragPlaceholderItem();
+            this._dragPlaceholderPos = -1;
+            animate = true;
+        }
+
+        // Placeholder dimensions match orientation.
         if (this._isHorizontal) {
-            ret = Dash.Dash.prototype.handleDragOver.call(this, source, actor, x, y, time);
-
-            if (ret === DND.DragMotionResult.CONTINUE)
-                return ret;
+            this._dragPlaceholder.child.set_width(this.iconSize / 2);
+            this._dragPlaceholder.child.set_height(this.iconSize);
         } else {
-            const propertyInjections = new Utils.PropertyInjectionsHandler();
-            propertyInjections.add(this._box, 'width', {
-                get: () => this._box.get_children().reduce((a, c) => a + c.height, 0),
-            });
-
-            if (this._dragPlaceholder) {
-                propertyInjections.add(this._dragPlaceholder, 'width', {
-                    get: () => this._dragPlaceholder.height,
-                });
-            }
-
-            ret = Dash.Dash.prototype.handleDragOver.call(this, source, actor, y, x, time);
-            propertyInjections.destroy();
-
-            if (ret === DND.DragMotionResult.CONTINUE)
-                return ret;
-
-            if (this._dragPlaceholder) {
-                this._dragPlaceholder.child.set_width(this.iconSize / 2);
-                this._dragPlaceholder.child.set_height(this.iconSize);
-
-                let pos = this._dragPlaceholderPos;
-                if (this._isHorizontal &&
-                    Clutter.get_default_text_direction() === Clutter.TextDirection.RTL)
-                    pos = this._box.get_children() - 1 - pos;
-
-                if (pos !== this._dragPlaceholderPos) {
-                    this._dragPlaceholderPos = pos;
-                    this._box.set_child_at_index(this._dragPlaceholder,
-                        this._dragPlaceholderPos);
-                }
-            }
+            this._dragPlaceholder.child.set_width(this.iconSize);
+            this._dragPlaceholder.child.set_height(this.iconSize / 2);
         }
 
-        // The original handleDragOver clamps the placeholder to AppFavorites
-        // count. Custom category icons live beyond that boundary, so recompute
-        // the position ourselves – limited only by the separator.
-        if (sourceApp?.isCustom && this._dragPlaceholder) {
-            // x, y are in the dash's local coordinate space; get_transformed_position()
-            // returns global stage coordinates – convert the cursor to stage coords.
-            const [dashX, dashY] = this.get_transformed_position();
-            const coord = this._isHorizontal ? dashX + x : dashY + y;
-            const children = this._box.get_children();
-            const rawSepIdx = this._separator ? children.indexOf(this._separator) : -1;
-            const sepIdx = rawSepIdx >= 0 ? rawSepIdx : children.length;
-
-            let newPos = 0;
-            for (let i = sepIdx - 1; i >= 0; i--) {
-                const child = children[i];
-                if (child === this._dragPlaceholder) continue;
-                const [cx, cy] = child.get_transformed_position();
-                const [cw, ch] = child.get_transformed_size();
-                const mid = this._isHorizontal ? cx + cw / 2 : cy + ch / 2;
-                if (coord > mid) {
-                    // placeholder before i shifts i left by 1; use i directly.
-                    newPos = i > this._dragPlaceholderPos ? i : i + 1;
-                    break;
-                }
-            }
-
-            if (newPos !== this._dragPlaceholderPos) {
-                this._dragPlaceholderPos = newPos;
-                this._box.set_child_at_index(this._dragPlaceholder, newPos);
-            }
-
-            if (ret === DND.DragMotionResult.COPY_DROP)
-                ret = DND.DragMotionResult.MOVE_DROP;
+        // Move placeholder only when position changed or it isn't in the box yet.
+        if (insertPos !== this._dragPlaceholderPos || !this._box.contains(this._dragPlaceholder)) {
+            this._dragPlaceholderPos = insertPos;
+            if (this._box.contains(this._dragPlaceholder))
+                this._box.remove_child(this._dragPlaceholder);
+            this._box.insert_child_at_index(this._dragPlaceholder, insertPos);
+            if (animate)
+                this._dragPlaceholder.show(true);
         }
 
-        if (this._dragPlaceholder) {
-            // Ensure the next and previous icon are visible when moving the
-            // placeholder (we're assuming there's room for both of them)
-            const children = this._box.get_children();
-            if (this._dragPlaceholderPos > 0) {
-                ensureActorVisibleInScrollView(this._scrollView,
-                    children[this._dragPlaceholderPos - 1]);
-            }
+        // Keep the icons adjacent to the placeholder visible in the scroll view.
+        const curr = this._box.get_children();
+        const phIdx = curr.indexOf(this._dragPlaceholder);
+        if (phIdx > 0)
+            ensureActorVisibleInScrollView(this._scrollView, curr[phIdx - 1]);
+        if (phIdx >= 0 && phIdx < curr.length - 1)
+            ensureActorVisibleInScrollView(this._scrollView, curr[phIdx + 1]);
 
-            if (this._dragPlaceholderPos >= -1 &&
-                this._dragPlaceholderPos < children.length - 1) {
-                ensureActorVisibleInScrollView(this._scrollView,
-                    children[this._dragPlaceholderPos + 1]);
-            }
-        }
+        if (isCustom)
+            return DND.DragMotionResult.MOVE_DROP;
 
-        return ret;
+        const favorites = AppFavorites.getAppFavorites().getFavorites();
+        return favorites.includes(app)
+            ? DND.DragMotionResult.MOVE_DROP
+            : DND.DragMotionResult.COPY_DROP;
     }
 
     acceptDrop(source, actor, x, y, time) {
-        const sourceApp = source?.app ?? source?._delegate?.app;
-        if (sourceApp?.isCustom && this._dragPlaceholderPos !== -1) {
-            const icons = Docking.DockManager.getDefault().categoryIcons;
-            const iconIdx = icons.findIndex(ci => ci.getApp() === sourceApp);
-            if (iconIdx >= 0) {
-                const children = this._box.get_children();
-                let configs = [];
-                try {
-                    configs = JSON.parse(Docking.DockManager.settings.get_string('category-icons'));
-                } catch (_e) {}
-                if (Array.isArray(configs) && configs[iconIdx]) {
-                    // Count non-custom apps before the placeholder to get the new position.
-                    let appIndex = 0;
-                    for (let i = 0; i < this._dragPlaceholderPos; i++) {
-                        const childApp = children[i].child?._delegate?.app;
-                        if (childApp && !childApp.isCustom)
-                            appIndex++;
-                    }
-                    configs[iconIdx].position = appIndex;
+        const app = source?.app ?? source?._delegate?.app;
+        if (!app || !this._dragPlaceholder)
+            return false;
 
-                    // Reorder configs to match the final visual order of all category
-                    // icons (placeholder marks the new position of the dragged icon;
-                    // the original slot of the dragged icon is skipped).  The array
-                    // order is used as a tiebreaker in _redisplay() when two icons
-                    // share the same position value.
-                    const orderedIndices = [];
-                    for (const child of children) {
-                        if (child === this._dragPlaceholder) {
-                            orderedIndices.push(iconIdx);
-                        } else {
-                            const childApp = child.child?._delegate?.app;
-                            if (childApp?.isCustom && childApp !== sourceApp) {
-                                const idx = icons.findIndex(ci => ci.getApp() === childApp);
-                                if (idx >= 0)
-                                    orderedIndices.push(idx);
-                            }
+        const children = this._box.get_children();
+        const phIdx = children.indexOf(this._dragPlaceholder);
+        if (phIdx === -1)
+            return false;
+
+        if (app.isCustom) {
+            // ── Category icon ────────────────────────────────────────────
+            const dockManager = Docking.DockManager.getDefault();
+            const icons = dockManager.categoryIcons;
+            const iconIdx = icons.findIndex(ci => ci.getApp() === app);
+            if (iconIdx < 0) {
+                this._clearDragPlaceholder();
+                return false;
+            }
+
+            let configs = [];
+            try {
+                configs = JSON.parse(Docking.DockManager.settings.get_string('category-icons'));
+            } catch (_e) {}
+            if (!Array.isArray(configs) || !configs[iconIdx]) {
+                this._clearDragPlaceholder();
+                return false;
+            }
+
+            // Position = number of regular (non-custom) apps before the placeholder.
+            let regAppsBefore = 0;
+            for (let i = 0; i < phIdx; i++) {
+                const ca = children[i].child?._delegate?.app;
+                if (ca && !ca.isCustom) regAppsBefore++;
+            }
+            configs[iconIdx].position = regAppsBefore;
+
+            // Rebuild the configs array in visual order so that the array index
+            // acts as a tiebreaker when two icons share the same position value.
+            const orderedConfigs = [];
+            const used = new Set();
+            for (const child of children) {
+                if (child === this._dragPlaceholder) {
+                    orderedConfigs.push(configs[iconIdx]);
+                    used.add(iconIdx);
+                } else {
+                    const ca = child.child?._delegate?.app;
+                    if (ca?.isCustom && ca !== app) {
+                        const idx = icons.findIndex(ci => ci.getApp() === ca);
+                        if (idx >= 0 && !used.has(idx)) {
+                            orderedConfigs.push(configs[idx]);
+                            used.add(idx);
                         }
                     }
-                    for (let i = 0; i < configs.length; i++) {
-                        if (!orderedIndices.includes(i))
-                            orderedIndices.push(i);
-                    }
-
-                    Docking.DockManager.settings.set_string(
-                        'category-icons',
-                        JSON.stringify(orderedIndices.map(i => configs[i])));
                 }
             }
+            for (let i = 0; i < configs.length; i++) {
+                if (!used.has(i)) orderedConfigs.push(configs[i]);
+            }
+
             this._clearDragPlaceholder();
+            Docking.DockManager.settings.set_string('category-icons', JSON.stringify(orderedConfigs));
             this._queueRedisplay();
             return true;
         }
-        return Dash.Dash.prototype.acceptDrop.call(this, source, actor, x, y, time);
+
+        // ── Regular favorite ─────────────────────────────────────────────
+        const id = app.get_id?.();
+        if (!id || app.is_window_backed())
+            return false;
+        if (!global.settings.is_writable('favorite-apps'))
+            return false;
+
+        const favorites = AppFavorites.getAppFavorites();
+        const favMap = favorites.getFavoriteMap();
+        const srcIsFavorite = id in favMap;
+
+        // Count favorites in front of the placeholder (skip placeholder itself
+        // and the dragged icon, which is still in the box as a ghost).
+        let favPos = 0;
+        for (let i = 0; i < phIdx; i++) {
+            const ca = children[i].child?._delegate?.app;
+            if (!ca) continue;
+            const cid = ca.get_id?.();
+            if (!cid || cid === id) continue;
+            if (cid in favMap) favPos++;
+        }
+
+        this._clearDragPlaceholder();
+
+        const laters = global.compositor.get_laters();
+        laters.add(Meta.LaterType.BEFORE_REDRAW, () => {
+            if (srcIsFavorite)
+                favorites.moveFavoriteToPos(id, favPos);
+            else
+                favorites.addFavoriteAtPos(id, favPos);
+            return GLib.SOURCE_REMOVE;
+        });
+        return true;
+    }
+
+    _clearDragPlaceholder() {
+        if (this._dragPlaceholder) {
+            this._dragPlaceholder.animateOutAndDestroy();
+            this._dragPlaceholder = null;
+        }
+        this._dragPlaceholderPos = -1;
     }
 
     _onWindowDragBegin(...args) {
