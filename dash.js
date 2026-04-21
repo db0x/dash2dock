@@ -1204,6 +1204,7 @@ export const DockDash = GObject.registerClass({
         for (const ci of dockManager.categoryIcons) {
             const categoryApp = ci.getApp();
             const categoryChild = this._box.get_children().find(actor =>
+                !removedActors.includes(actor) &&
                 actor.child?._delegate?.app === categoryApp);
             if (categoryChild)
                 ci._sourceActor = categoryChild; // Container, nicht child

@@ -1612,7 +1612,7 @@ export function itemShowLabel() {
         break;
     case St.Side.BOTTOM:
         yOffset = labelOffset;
-        y = stageY - labelHeight - yOffset - 6;
+        y = stageY - labelHeight - yOffset;
         xOffset = Math.floor((itemWidth - labelWidth) / 2);
         x = stageX + xOffset;
         break;
