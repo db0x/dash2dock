@@ -970,14 +970,36 @@ const DockLocationAppIcon = GObject.registerClass({
 
         super._init(app, monitorIndex, iconAnimator);
 
-        if (Docking.DockManager.settings.isolateLocations) {
-            this._signalsHandler.add(tracker, 'notify::focus-app', () => this._updateFocusState());
+        if (app._categoryIconInstance) {
+            this._setupCompositeIcon(app._categoryIconInstance);
         } else {
-            this._signalsHandler.add(global.display, 'notify::focus-window',
-                () => this._updateFocusState());
+            if (Docking.DockManager.settings.isolateLocations) {
+                this._signalsHandler.add(tracker, 'notify::focus-app', () => this._updateFocusState());
+            } else {
+                this._signalsHandler.add(global.display, 'notify::focus-window',
+                    () => this._updateFocusState());
+            }
+            this._signalsHandler.add(this.app, 'notify::icon', () => this.icon.update());
         }
+    }
 
-        this._signalsHandler.add(this.app, 'notify::icon', () => this.icon.update());
+    _setupCompositeIcon(categoryIcon) {
+        // Warte bis icon._iconBin verfügbar ist, dann Composite-Widget einsetzen
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            if (!this.icon?._iconBin) return GLib.SOURCE_REMOVE;
+            const iconSize = this.icon.iconSize ?? 48;
+            const composite = categoryIcon.getCompositeIcon(iconSize);
+            this.icon._iconBin.destroy_all_children();
+            this.icon._iconBin.add_child(composite);
+
+            // setIconSize patchen damit das Composite mitgezogen wird
+            const origSetIconSize = this.icon.setIconSize.bind(this.icon);
+            this.icon.setIconSize = size => {
+                origSetIconSize(size);
+                composite.update(undefined, size);
+            };
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     get location() {

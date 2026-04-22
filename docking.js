@@ -13,6 +13,7 @@ import {
 import {
     AppMenu,
     AppDisplay,
+    AppFavorites,
     Layout,
     Main,
     OverviewControls,
@@ -1834,6 +1835,116 @@ export class DockManager {
         return this._categoryIcons ?? [];
     }
 
+    // ── User-Category Management ────────────────────────────────────────────
+
+    _readUserCategories() {
+        try {
+            const parsed = JSON.parse(this._settings.get_string('user-categories'));
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (_e) {
+            return [];
+        }
+    }
+
+    _writeUserCategories(configs) {
+        this._settings.set_string('user-categories', JSON.stringify(configs));
+    }
+
+    /**
+     * Erstellt eine neue Kategorie mit zwei Apps an der angegebenen Dock-Position.
+     * position = Anzahl regulärer (nicht-custom) Apps vor der neuen Kategorie.
+     */
+    createUserCategory(appId1, appId2, position) {
+        const configs = this._readUserCategories();
+        configs.push({
+            id: Locations.generateCategoryId(),
+            apps: [appId1, appId2],
+            position: position ?? -1,
+        });
+        this._writeUserCategories(configs);
+    }
+
+    /**
+     * Fügt eine App zu einer bestehenden Kategorie hinzu (falls nicht bereits drin).
+     */
+    addAppToUserCategory(categoryId, appId) {
+        const configs = this._readUserCategories();
+        const cat = configs.find(c => c.id === categoryId);
+        if (!cat) return;
+        if (!cat.apps.includes(appId))
+            cat.apps.push(appId);
+        this._writeUserCategories(configs);
+    }
+
+    /**
+     * Entfernt eine App aus einer Kategorie.
+     * Hat die Kategorie danach < 2 Apps, wird sie aufgelöst:
+     *   – die verbleibende App wird als Favorit an der Kategorieposition eingefügt.
+     *   – die Kategorie wird gelöscht.
+     * Gibt zurück ob die Kategorie aufgelöst wurde.
+     */
+    removeAppFromUserCategory(categoryId, appId) {
+        const configs = this._readUserCategories();
+        const idx = configs.findIndex(c => c.id === categoryId);
+        if (idx < 0) return false;
+
+        const cat = configs[idx];
+        cat.apps = cat.apps.filter(id => id !== appId);
+
+        if (cat.apps.length < 2) {
+            // Kategorie auflösen
+            const remaining = cat.apps[0] ?? null;
+            const catPosition = cat.position;
+            configs.splice(idx, 1);
+            this._writeUserCategories(configs);
+
+            if (remaining) {
+                // Verbleibende App als Favorit an Kategorie-Position einfügen
+                const favs = AppFavorites.getAppFavorites();
+                if (!(remaining in favs.getFavoriteMap())) {
+                    const favList = favs.getFavorites();
+                    const insertPos = Math.min(catPosition >= 0 ? catPosition : favList.length, favList.length);
+                    favs.addFavoriteAtPos(remaining, insertPos);
+                }
+            }
+            return true;
+        }
+
+        this._writeUserCategories(configs);
+        return false;
+    }
+
+    /**
+     * Verschmilzt zwei Kategorien – Apps der Quell-Kategorie werden in die
+     * Ziel-Kategorie übernommen, die Quell-Kategorie wird gelöscht.
+     */
+    mergeUserCategories(sourceCategoryId, targetCategoryId) {
+        if (sourceCategoryId === targetCategoryId) return;
+        const configs = this._readUserCategories();
+        const src = configs.find(c => c.id === sourceCategoryId);
+        const tgt = configs.find(c => c.id === targetCategoryId);
+        if (!src || !tgt) return;
+
+        // Apps zusammenführen (keine Duplikate)
+        for (const appId of src.apps) {
+            if (!tgt.apps.includes(appId))
+                tgt.apps.push(appId);
+        }
+
+        const srcIdx = configs.indexOf(src);
+        configs.splice(srcIdx, 1);
+        this._writeUserCategories(configs);
+    }
+
+    /**
+     * Gibt alle App-IDs zurück, die sich in einer Benutzerkategorie befinden.
+     */
+    getCategorizedAppIds() {
+        return new Set(this._readUserCategories().flatMap(c => c.apps));
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+
     get desktopIconsUsableArea() {
         return this._desktopIconsUsableArea;
     }
@@ -1879,13 +1990,13 @@ export class DockManager {
             this._trash = null;
         }
 
-        // ── Category Icons ──────────────────────────────────────────
+        // ── User Category Icons ─────────────────────────────────────
         if (!this._categoryIcons)
             this._categoryIcons = [];
 
         let configs = [];
         try {
-            configs = JSON.parse(this._settings.get_string('category-icons'));
+            configs = JSON.parse(this._settings.get_string('user-categories'));
         } catch (_e) {}
         if (!Array.isArray(configs))
             configs = [];
@@ -2071,7 +2182,7 @@ export class DockManager {
             () => this._ensureLocations(),
         ], [
             this._settings,
-            'changed::category-icons',
+            'changed::user-categories',
             () => {
                 this._ensureLocations();
                 DockManager.allDocks.forEach(dock => dock.dash._queueRedisplay());

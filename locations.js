@@ -1361,14 +1361,91 @@ export class Trash {
 }
 
 // ── Category Icon ─────────────────────────────────────────────────────────────
+
 /**
- * Ein 4×4 Icon-Grid-Panel das über dem Dock erscheint,
+ * Erzeugt eine eindeutige ID für eine neue Benutzerkategorie.
+ */
+export function generateCategoryId() {
+    return `cat_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+}
+
+/**
+ * Berechnet den Kategorie-Label aus den ersten vier App-Namen (durch Komma getrennt).
+ */
+export function getCategoryLabel(appIds) {
+    const appSystem = Shell.AppSystem.get_default();
+    return appIds.slice(0, 4)
+        .map(id => appSystem.lookup_app(id)?.get_name() ?? id)
+        .join(', ');
+}
+
+/**
+ * 2×2 Composite-Icon Widget das bis zu vier App-Icons verkleinert anzeigt.
+ */
+class CategoryCompositeIcon extends St.Widget {
+    constructor(appIds, iconSize) {
+        super({layout_manager: new Clutter.BinLayout()});
+        this._appIds = appIds ?? [];
+        this._iconSize = iconSize ?? 48;
+        this._build();
+    }
+
+    update(appIds, iconSize) {
+        if (appIds !== undefined)
+            this._appIds = appIds;
+        if (iconSize !== undefined)
+            this._iconSize = iconSize;
+        this._build();
+    }
+
+    _build() {
+        this.destroy_all_children();
+        const appSystem = Shell.AppSystem.get_default();
+        const apps = this._appIds.slice(0, 4)
+            .map(id => appSystem.lookup_app(id))
+            .filter(a => a !== null);
+
+        if (apps.length === 0)
+            return;
+
+        const size = this._iconSize;
+        this.set_size(size, size);
+
+        if (apps.length === 1) {
+            this.add_child(new St.Icon({
+                gicon: apps[0].get_icon(),
+                icon_size: size,
+            }));
+            return;
+        }
+
+        const subSize = Math.floor((size - 2) / 2);
+        const rows = apps.length <= 2 ? 1 : 2;
+        const grid = new St.BoxLayout({vertical: true, spacing: 2});
+
+        for (let r = 0; r < rows; r++) {
+            const row = new St.BoxLayout({vertical: false, spacing: 2});
+            for (let i = r * 2; i < Math.min(r * 2 + 2, apps.length); i++) {
+                row.add_child(new St.Icon({
+                    gicon: apps[i].get_icon(),
+                    icon_size: subSize,
+                }));
+            }
+            grid.add_child(row);
+        }
+        this.add_child(grid);
+    }
+}
+
+/**
+ * Ein Icon-Grid-Panel das über dem Dock erscheint,
  * wenn auf das Category Icon geklickt wird.
+ * Zeigt Apps aus der Benutzerkategorie (explizite App-Liste), alphabetisch sortiert.
  */
 class CategoryPanel {
-    constructor(sourceActor, category, onClose) {
+    constructor(sourceActor, categoryData, onClose) {
         this._sourceActor = sourceActor;
-        this._category = category;
+        this._categoryData = categoryData;
         this._onClose = onClose;
 
         const mainDock = Docking.DockManager.getDefault().mainDock;
@@ -1442,15 +1519,11 @@ class CategoryPanel {
     }
 
     _buildGrid(mainDock) {
-        const apps = Shell.AppSystem.get_default()
-            .get_installed()
-            .filter(info => {
-                const cats = info.get_categories() ?? '';
-                const category = this._category || 'd2dGames';
-                return info.should_show() && cats.includes(category);
-            })
-            .map(info => Shell.AppSystem.get_default().lookup_app(info.get_id()))
-            .filter(app => app !== null)
+        const categoryId = this._categoryData?.id;
+        const appSystem = Shell.AppSystem.get_default();
+        const apps = (this._categoryData?.apps ?? [])
+            .map(id => appSystem.lookup_app(id))
+            .filter(a => a !== null)
             .sort((a, b) => a.get_name().localeCompare(b.get_name()));
 
         const appCount = apps.length;
@@ -1473,18 +1546,19 @@ class CategoryPanel {
 
                 if (app) {
                     const item = dash.createPanelItem(app);
+                    // Panel-Items sind drag-fähig – kein fakeRelease() mehr.
+                    // Drag-begin schließt das Panel (damit der Dock den Drop empfangen kann).
                     if (item.child?._draggable) {
-                        item.child.connect('button-press-event', () => {
-                            item.child._draggable.fakeRelease?.();
-                            return Clutter.EVENT_PROPAGATE;
+                        item.child._d2dInCategoryId = categoryId;
+                        item.child._draggable.connect('drag-begin', () => {
+                            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                                this.close();
+                                return GLib.SOURCE_REMOVE;
+                            });
                         });
                     }
                     item.show(false);
-                    // CSS-Transitions auf dem StButton deaktivieren: das CSS-Stylesheet
-                    // setzt transition-duration: 250 auf .dash-item-container > StButton.
-                    // Beim ersten Erscheinen des Panels würde diese Transition Padding/Size
-                    // von 0 → Endwert animieren und nach unserer Panel-Animation einen
-                    // Squish-Effekt erzeugen (besonders deutlich bei vielen Icons).
+                    // CSS-Transitions deaktivieren (verhindert Squish-Effekt beim Öffnen)
                     item.set_style('transition-duration: 0ms;');
                     if (item.child)
                         item.child.set_style('transition-duration: 0ms;');
@@ -1728,34 +1802,47 @@ class CategoryPanel {
 }
 
 /**
- * Hält ein Shell.App-Objekt für ein Category Icon,
- * analog zur Trash-Klasse – aber ohne eigene AppInfo-Subklasse.
- * config: {name, label, category, position}
+ * Hält ein Shell.App-Objekt für ein Benutzerkategorie-Icon.
+ * config: {id, apps: [appId, ...], position}
+ *
+ * Das Icon zeigt ein 2×2 Composite aus den ersten vier App-Icons.
+ * Der Label setzt sich automatisch aus den Namen der ersten vier Apps zusammen.
  */
 export class CategoryIcon {
     constructor(config) {
-        this._config = config ?? {};
+        this._config = config ?? {id: generateCategoryId(), apps: [], position: -1};
     }
 
     get position() {
         return this._config.position ?? -1;
     }
 
+    get config() {
+        return this._config;
+    }
+
     updateConfig(config) {
-        const changed =
-            config.name !== this._config.name ||
-            config.label !== this._config.label ||
-            config.category !== this._config.category;
+        const appsChanged = JSON.stringify(config.apps) !== JSON.stringify(this._config.apps);
         this._config = config;
-        if (changed) {
-            this._app?.destroy();
-            this._app = null;
+        if (appsChanged) {
+            // Composite-Icon aktualisieren falls bereits erstellt
+            if (this._compositeIcon)
+                this._compositeIcon.update(config.apps);
+            // App-Label neu setzen
+            if (this._app) {
+                const newLabel = getCategoryLabel(config.apps);
+                this._app.appInfo._name = newLabel;
+                // Kategorie-Daten auf dem App-Objekt aktualisieren
+                if (this._app._categoryData)
+                    this._app._categoryData.apps = [...config.apps];
+            }
         }
     }
 
     destroy() {
         this._panel?.destroy();
         this._panel = null;
+        this._compositeIcon = null;
         this._app?.destroy();
         this._app = null;
     }
@@ -1764,24 +1851,30 @@ export class CategoryIcon {
         if (this._app)
             return;
 
-        const iconName = this._config.name || 'applications-games';
+        const label = getCategoryLabel(this._config.apps);
         const appInfo = new LocationAppInfo({
-            name: this._config.label || 'My Games',
-            icon: Gio.ThemedIcon.new(iconName),
+            name: label || 'Kategorie',
+            icon: Gio.ThemedIcon.new('view-grid-symbolic'),
             cancellable: new Gio.Cancellable(),
         });
 
         this._app = makeLocationApp({
             appInfo,
-            fallbackIconName: iconName,
+            fallbackIconName: 'view-grid-symbolic',
         });
 
         this._app._setDtdData({isCustom: true}, {getter: true, enumerable: true});
+        // Kategorie-Daten für Drag&Drop-Handler zugänglich machen
+        this._app._setDtdData({
+            _categoryData: {id: this._config.id, apps: [...this._config.apps]},
+        }, {getter: true, enumerable: true});
+        // Rück-Referenz auf das CategoryIcon-Objekt (für Composite-Icon-Rendering)
+        this._app._categoryIconInstance = this;
 
         this._app._mi('can_open_new_window', () => false);
         this._app._mi('open_new_window', () => {});
 
-        // activate() wird von launchNewWindow() aufgerufen wenn keine Fenster offen sind
+        // activate() → Panel öffnen/schließen
         const self = this;
         this._app._mi('activate', () => {
             if (self._sourceActor)
@@ -1795,6 +1888,18 @@ export class CategoryIcon {
     }
 
     /**
+     * Gibt das CategoryCompositeIcon zurück (oder erstellt es).
+     * Wird von DockLocationAppIcon genutzt um das Icon zu rendern.
+     */
+    getCompositeIcon(iconSize) {
+        if (!this._compositeIcon)
+            this._compositeIcon = new CategoryCompositeIcon(this._config.apps, iconSize);
+        else
+            this._compositeIcon.update(this._config.apps, iconSize);
+        return this._compositeIcon;
+    }
+
+    /**
      * Wird vom AppIcon aufgerufen wenn auf das Icon geklickt wird.
      * Öffnet/schließt das Panel über dem Dock.
      */
@@ -1805,7 +1910,7 @@ export class CategoryIcon {
             return;
         }
 
-        this._panel = new CategoryPanel(sourceActor, this._config.category, () => {
+        this._panel = new CategoryPanel(sourceActor, this._config, () => {
             this._panel = null;
         });
         this._panel.open();

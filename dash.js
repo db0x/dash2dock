@@ -394,6 +394,7 @@ export const DockDash = GObject.registerClass({
     }
 
     _clearEmptyDropTarget(...args) {
+        this._clearDropTarget();
         return Dash.Dash.prototype._clearEmptyDropTarget.call(this, ...args);
     }
 
@@ -403,7 +404,10 @@ export const DockDash = GObject.registerClass({
             return DND.DragMotionResult.NO_DROP;
 
         const isCustom = !!app.isCustom;
-        if (!isCustom) {
+        // App aus CategoryPanel (hat _d2dInCategoryId gesetzt)
+        const inCategoryId = source?._d2dInCategoryId ?? source?._delegate?._d2dInCategoryId;
+
+        if (!isCustom && !inCategoryId) {
             if (app.is_window_backed())
                 return DND.DragMotionResult.NO_DROP;
             if (!global.settings.is_writable('favorite-apps'))
@@ -427,9 +431,52 @@ export const DockDash = GObject.registerClass({
                 clean.push(children[i]);
         }
 
-        // Determine insertion index using midpoints (works for both H and V,
-        // no axis-swapping hacks required).
-        let insertPos = clean.length; // default: append before separator
+        // ── "Drop on Icon" Erkennung ──────────────────────────────────────
+        // Wenn der Cursor in der mittleren 50%-Zone eines Icons liegt UND ein
+        // gültiges Merge-Ziel vorliegt, zeigen wir einen Drop-Target-Highlight.
+        let dropTarget = null;
+        for (let i = 0; i < clean.length; i++) {
+            const [cx, cy] = clean[i].get_transformed_position();
+            const [cw, ch] = clean[i].get_transformed_size();
+            const start = this._isHorizontal ? cx : cy;
+            const size = this._isHorizontal ? cw : ch;
+            const margin = size * 0.25;
+
+            if (cursor >= start + margin && cursor <= start + size - margin) {
+                const childApp = clean[i].child?._delegate?.app;
+                if (!childApp || childApp === app) break;
+                const childIsCustom = !!childApp.isCustom;
+
+                // Gültige Ziele:
+                // Regular → Regular: neue Kategorie
+                // Regular → Category: App zur Kategorie hinzufügen
+                // Category → Category: Kategorien verschmelzen
+                // Panel-Item → Regular oder Category: App heraus nehmen (kein Merge-Drop nötig)
+                const isMergeTarget = !inCategoryId && (!isCustom || childIsCustom);
+                if (isMergeTarget)
+                    dropTarget = clean[i];
+                break;
+            }
+        }
+
+        // Drop-Target-Highlight aktualisieren
+        if (dropTarget !== this._dropTargetIcon) {
+            if (this._dropTargetIcon)
+                this._dropTargetIcon.child?.remove_style_class_name('drop-target');
+            this._dropTargetIcon = dropTarget;
+            if (this._dropTargetIcon)
+                this._dropTargetIcon.child?.add_style_class_name('drop-target');
+        }
+
+        // Wenn Drop-Target aktiv → kein Placeholder
+        if (this._dropTargetIcon) {
+            this._clearDragPlaceholder();
+            return isCustom ? DND.DragMotionResult.MOVE_DROP : DND.DragMotionResult.COPY_DROP;
+        }
+        // ─────────────────────────────────────────────────────────────────
+
+        // Determine insertion index using midpoints
+        let insertPos = clean.length;
         for (let i = 0; i < clean.length; i++) {
             const [cx, cy] = clean[i].get_transformed_position();
             const [cw, ch] = clean[i].get_transformed_size();
@@ -442,7 +489,7 @@ export const DockDash = GObject.registerClass({
 
         // For regular favorites: suppress placeholder when the cursor is at
         // the icon's own current position (no-op move).
-        if (!isCustom) {
+        if (!isCustom && !inCategoryId) {
             const favorites = AppFavorites.getAppFavorites().getFavorites();
             const favPos = favorites.indexOf(app);
             if (favPos !== -1) {
@@ -497,14 +544,120 @@ export const DockDash = GObject.registerClass({
             return DND.DragMotionResult.MOVE_DROP;
 
         const favorites = AppFavorites.getAppFavorites().getFavorites();
-        return favorites.includes(app)
+        return favorites.includes(app) || inCategoryId
             ? DND.DragMotionResult.MOVE_DROP
             : DND.DragMotionResult.COPY_DROP;
     }
 
     acceptDrop(source, actor, x, y, time) {
         const app = source?.app ?? source?._delegate?.app;
-        if (!app || !this._dragPlaceholder)
+        if (!app)
+            return false;
+
+        const isCustom = !!app.isCustom;
+        const inCategoryId = source?._d2dInCategoryId ?? source?._delegate?._d2dInCategoryId;
+        const dockManager = Docking.DockManager.getDefault();
+
+        // ── Drop auf Icon (Kategorie erstellen / erweitern / verschmelzen) ──
+        if (this._dropTargetIcon) {
+            const targetApp = this._dropTargetIcon.child?._delegate?.app;
+            this._dropTargetIcon.child?.remove_style_class_name('drop-target');
+
+            // Position des Ziel-Icons im Dock berechnen (für neue Kategorie)
+            const allChildren = this._box.get_children();
+            let regBefore = 0;
+            for (const child of allChildren) {
+                if (child === this._dropTargetIcon) break;
+                const ca = child.child?._delegate?.app;
+                if (ca && !ca.isCustom) regBefore++;
+            }
+            this._dropTargetIcon = null;
+            this._clearDragPlaceholder();
+
+            if (!targetApp) return false;
+            const targetIsCustom = !!targetApp.isCustom;
+            const appId = app.get_id?.();
+
+            if (!isCustom && !targetIsCustom && appId) {
+                // Regular + Regular → neue Kategorie erstellen
+                const targetId = targetApp.get_id?.();
+                if (!targetId) return false;
+                dockManager.createUserCategory(appId, targetId, regBefore);
+                // Beide aus den Favoriten entfernen
+                const laters = global.compositor.get_laters();
+                laters.add(Meta.LaterType.BEFORE_REDRAW, () => {
+                    const favs = AppFavorites.getAppFavorites();
+                    if (appId in favs.getFavoriteMap())
+                        favs.removeFavorite(appId);
+                    if (targetId in favs.getFavoriteMap())
+                        favs.removeFavorite(targetId);
+                    return GLib.SOURCE_REMOVE;
+                });
+                return true;
+
+            } else if (!isCustom && targetIsCustom && appId) {
+                // Regular + Category → App zur Kategorie hinzufügen
+                const catId = targetApp._categoryData?.id;
+                if (!catId) return false;
+                dockManager.addAppToUserCategory(catId, appId);
+                const laters = global.compositor.get_laters();
+                laters.add(Meta.LaterType.BEFORE_REDRAW, () => {
+                    const favs = AppFavorites.getAppFavorites();
+                    // Nur aus Favoriten entfernen wenn es ein eigenes Dock-Icon war
+                    if (appId in favs.getFavoriteMap())
+                        favs.removeFavorite(appId);
+                    return GLib.SOURCE_REMOVE;
+                });
+                return true;
+
+            } else if (isCustom && targetIsCustom) {
+                // Category + Category → verschmelzen
+                const srcId = app._categoryData?.id;
+                const tgtId = targetApp._categoryData?.id;
+                if (srcId && tgtId)
+                    dockManager.mergeUserCategories(srcId, tgtId);
+                return true;
+            }
+
+            return false;
+        }
+
+        // ── Drop aus CategoryPanel (App herausziehen) ─────────────────────
+        if (inCategoryId) {
+            if (!this._dragPlaceholder) return false;
+
+            const children = this._box.get_children();
+            const phIdx = children.indexOf(this._dragPlaceholder);
+            if (phIdx === -1) { this._clearDragPlaceholder(); return false; }
+
+            // Position im Dock berechnen
+            let favPos = 0;
+            const appId = app.get_id?.();
+            for (let i = 0; i < phIdx; i++) {
+                const ca = children[i].child?._delegate?.app;
+                if (!ca) continue;
+                const cid = ca.get_id?.();
+                if (!cid || cid === appId) continue;
+                const favMap = AppFavorites.getAppFavorites().getFavoriteMap();
+                if (cid in favMap) favPos++;
+            }
+
+            this._clearDragPlaceholder();
+
+            const laters = global.compositor.get_laters();
+            laters.add(Meta.LaterType.BEFORE_REDRAW, () => {
+                // App aus Kategorie entfernen (löst ggf. Kategorie auf)
+                dockManager.removeAppFromUserCategory(inCategoryId, appId);
+                // Als Favorit an Drop-Position einfügen
+                const favs = AppFavorites.getAppFavorites();
+                if (!(appId in favs.getFavoriteMap()))
+                    favs.addFavoriteAtPos(appId, favPos);
+                return GLib.SOURCE_REMOVE;
+            });
+            return true;
+        }
+
+        if (!this._dragPlaceholder)
             return false;
 
         const children = this._box.get_children();
@@ -512,9 +665,8 @@ export const DockDash = GObject.registerClass({
         if (phIdx === -1)
             return false;
 
-        if (app.isCustom) {
-            // ── Category icon ────────────────────────────────────────────
-            const dockManager = Docking.DockManager.getDefault();
+        if (isCustom) {
+            // ── Category icon repositionieren ─────────────────────────────
             const icons = dockManager.categoryIcons;
             const iconIdx = icons.findIndex(ci => ci.getApp() === app);
             if (iconIdx < 0) {
@@ -524,14 +676,14 @@ export const DockDash = GObject.registerClass({
 
             let configs = [];
             try {
-                configs = JSON.parse(Docking.DockManager.settings.get_string('category-icons'));
+                configs = JSON.parse(Docking.DockManager.settings.get_string('user-categories'));
             } catch (_e) {}
             if (!Array.isArray(configs) || !configs[iconIdx]) {
                 this._clearDragPlaceholder();
                 return false;
             }
 
-            // Position = number of regular (non-custom) apps before the placeholder.
+            // Position = Anzahl regulärer (nicht-custom) Apps vor dem Placeholder
             let regAppsBefore = 0;
             for (let i = 0; i < phIdx; i++) {
                 const ca = children[i].child?._delegate?.app;
@@ -539,8 +691,7 @@ export const DockDash = GObject.registerClass({
             }
             configs[iconIdx].position = regAppsBefore;
 
-            // Rebuild the configs array in visual order so that the array index
-            // acts as a tiebreaker when two icons share the same position value.
+            // Config-Array in visueller Reihenfolge neu aufbauen (Tiebreaker)
             const orderedConfigs = [];
             const used = new Set();
             for (const child of children) {
@@ -563,12 +714,12 @@ export const DockDash = GObject.registerClass({
             }
 
             this._clearDragPlaceholder();
-            Docking.DockManager.settings.set_string('category-icons', JSON.stringify(orderedConfigs));
+            Docking.DockManager.settings.set_string('user-categories', JSON.stringify(orderedConfigs));
             this._queueRedisplay();
             return true;
         }
 
-        // ── Regular favorite ─────────────────────────────────────────────
+        // ── Regulärer Favorit verschieben / hinzufügen ─────────────────────
         const id = app.get_id?.();
         if (!id || app.is_window_backed())
             return false;
@@ -579,8 +730,6 @@ export const DockDash = GObject.registerClass({
         const favMap = favorites.getFavoriteMap();
         const srcIsFavorite = id in favMap;
 
-        // Count favorites in front of the placeholder (skip placeholder itself
-        // and the dragged icon, which is still in the box as a ghost).
         let favPos = 0;
         for (let i = 0; i < phIdx; i++) {
             const ca = children[i].child?._delegate?.app;
@@ -609,6 +758,13 @@ export const DockDash = GObject.registerClass({
             this._dragPlaceholder = null;
         }
         this._dragPlaceholderPos = -1;
+    }
+
+    _clearDropTarget() {
+        if (this._dropTargetIcon) {
+            this._dropTargetIcon.child?.remove_style_class_name('drop-target');
+            this._dropTargetIcon = null;
+        }
     }
 
     _onWindowDragBegin(...args) {
@@ -682,13 +838,17 @@ export const DockDash = GObject.registerClass({
 
     _createAppItem(app) {
         const appIcon = new AppIcons.makeAppIcon(app, this._monitorIndex, this.iconAnimator);
+        // Markierung: dieses Icon stammt aus unserem Dock (nicht aus dem Gnome-Dash/Overview)
+        appIcon._d2dFromOurDock = true;
 
         if (appIcon._draggable) {
             appIcon._draggable.connect('drag-begin', () => {
                 appIcon.opacity = 50;
+                this._clearDropTarget();
             });
             appIcon._draggable.connect('drag-end', () => {
                 appIcon.opacity = 255;
+                this._clearDropTarget();
             });
         }
 
@@ -941,11 +1101,19 @@ export const DockDash = GObject.registerClass({
     }
 
     _redisplay() {
-        const favorites = AppFavorites.getAppFavorites().getFavoriteMap();
-
-        let running = this._appSystem.get_running();
         const dockManager = Docking.DockManager.getDefault();
         const {settings} = dockManager;
+
+        // Apps die in einer Benutzerkategorie sind, werden nicht als eigene Icons angezeigt
+        const categorizedAppIds = dockManager.getCategorizedAppIds?.() ?? new Set();
+
+        const favorites = AppFavorites.getAppFavorites().getFavoriteMap();
+
+        // Favoriten die in einer Kategorie sind, aus der Standalone-Anzeige herausfiltern
+        for (const catId of categorizedAppIds)
+            delete favorites[catId];
+
+        let running = this._appSystem.get_running();
 
         this._scrollView.set({
             xAlign: Clutter.ActorAlign.FILL,
@@ -993,14 +1161,18 @@ export const DockDash = GObject.registerClass({
                 const index = running.indexOf(oldApp);
                 if (index > -1) {
                     const [app] = running.splice(index, 1);
-                    if (!showFavorites || !(app.get_id() in favorites))
+                    const appId = app.get_id();
+                    if (categorizedAppIds.has(appId)) return; // in Kategorie → überspringen
+                    if (!showFavorites || !(appId in favorites))
                         newApps.push(app);
                 }
             });
 
             // Second: add the new apps
             running.forEach(app => {
-                if (!showFavorites || !(app.get_id() in favorites))
+                const appId = app.get_id();
+                if (categorizedAppIds.has(appId)) return; // in Kategorie → überspringen
+                if (!showFavorites || !(appId in favorites))
                     newApps.push(app);
             });
         }

@@ -283,8 +283,13 @@
     </key>
     <key type="s" name="category-icons">
       <default>'[{"name":"applications-games","label":"My Games","category":"d2dGames","position":-1}]'</default>
-      <summary>Category icons</summary>
-      <description>JSON array of category icon configs: [{name, label, category, position}]</description>
+      <summary>Category icons (legacy)</summary>
+      <description>Legacy key, no longer used.</description>
+    </key>
+    <key type="s" name="user-categories">
+      <default>'[]'</default>
+      <summary>User-defined category icons</summary>
+      <description>JSON array of user-defined category configs: [{id, apps: [appId, ...], position}]</description>
     </key>
     <key type="b" name="dance-urgent-applications">
       <default>true</default>
