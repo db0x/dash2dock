@@ -988,6 +988,9 @@ const DockLocationAppIcon = GObject.registerClass({
         this.icon.createIcon = size => categoryIcon.createCompositeIcon(size);
         categoryIcon._baseIcon = this.icon;
         this.icon._createIconTexture(this.icon.iconSize);
+        // getDragActor überschreiben damit beim Drag das Composite-Icon statt
+        // des generischen App-Icons erscheint
+        this.getDragActor = () => categoryIcon.createCompositeIcon(this.icon.iconSize);
     }
 
     get location() {
