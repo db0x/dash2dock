@@ -1,6 +1,5 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
 
-import Adw from 'gi://Adw';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Gdk from 'gi://Gdk';
@@ -1158,7 +1157,6 @@ const DockSettings = GObject.registerClass({
         this._builder.get_object('extension_version').set_label(
             `${this._extensionPreferences.metadata.version}`);
     }
-
 });
 
 export default class DockPreferences extends ExtensionPreferences {
