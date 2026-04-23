@@ -984,22 +984,10 @@ const DockLocationAppIcon = GObject.registerClass({
     }
 
     _setupCompositeIcon(categoryIcon) {
-        // Warte bis icon._iconBin verfügbar ist, dann Composite-Widget einsetzen
-        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-            if (!this.icon?._iconBin) return GLib.SOURCE_REMOVE;
-            const iconSize = this.icon.iconSize ?? 48;
-            const composite = categoryIcon.getCompositeIcon(iconSize);
-            this.icon._iconBin.destroy_all_children();
-            this.icon._iconBin.add_child(composite);
-
-            // setIconSize patchen damit das Composite mitgezogen wird
-            const origSetIconSize = this.icon.setIconSize.bind(this.icon);
-            this.icon.setIconSize = size => {
-                origSetIconSize(size);
-                composite.update(undefined, size);
-            };
-            return GLib.SOURCE_REMOVE;
-        });
+        // createIcon überschreiben — immer frisch erstellen, da BaseIcon das vorherige destroy()t
+        this.icon.createIcon = size => categoryIcon.createCompositeIcon(size);
+        categoryIcon._baseIcon = this.icon;
+        this.icon._createIconTexture(this.icon.iconSize);
     }
 
     get location() {

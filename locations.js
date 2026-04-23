@@ -1382,6 +1382,7 @@ export function getCategoryLabel(appIds) {
 /**
  * 2×2 Composite-Icon Widget das bis zu vier App-Icons verkleinert anzeigt.
  */
+const CategoryCompositeIcon = GObject.registerClass(
 class CategoryCompositeIcon extends St.Widget {
     constructor(appIds, iconSize) {
         super({layout_manager: new Clutter.BinLayout()});
@@ -1412,30 +1413,26 @@ class CategoryCompositeIcon extends St.Widget {
         this.set_size(size, size);
 
         if (apps.length === 1) {
-            this.add_child(new St.Icon({
-                gicon: apps[0].get_icon(),
-                icon_size: size,
-            }));
+            this.add_child(apps[0].create_icon_texture(size));
             return;
         }
 
         const subSize = Math.floor((size - 2) / 2);
         const rows = apps.length <= 2 ? 1 : 2;
-        const grid = new St.BoxLayout({vertical: true, spacing: 2});
+        const grid = new St.BoxLayout({vertical: true});
+        grid.style = 'spacing: 2px;';
 
         for (let r = 0; r < rows; r++) {
-            const row = new St.BoxLayout({vertical: false, spacing: 2});
+            const row = new St.BoxLayout({vertical: false});
+            row.style = 'spacing: 2px;';
             for (let i = r * 2; i < Math.min(r * 2 + 2, apps.length); i++) {
-                row.add_child(new St.Icon({
-                    gicon: apps[i].get_icon(),
-                    icon_size: subSize,
-                }));
+                row.add_child(apps[i].create_icon_texture(subSize));
             }
             grid.add_child(row);
         }
         this.add_child(grid);
     }
-}
+});
 
 /**
  * Ein Icon-Grid-Panel das über dem Dock erscheint,
@@ -1551,10 +1548,16 @@ class CategoryPanel {
                     if (item.child?._draggable) {
                         item.child._d2dInCategoryId = categoryId;
                         item.child._draggable.connect('drag-begin', () => {
-                            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-                                this.close();
-                                return GLib.SOURCE_REMOVE;
-                            });
+                            // Panel visuell verstecken, aber isOpen=true lassen damit
+                            // requiresVisibility=true bleibt und der Dock sichtbar bleibt
+                            this.actor.hide();
+                            if (this._overlay)
+                                this._overlay.hide();
+                        });
+                        item.child._draggable.connect('drag-end', () => {
+                            // Jetzt erst wirklich schließen (gibt requiresVisibility frei)
+                            this.actor.show();
+                            this.close();
                         });
                     }
                     item.show(false);
@@ -1825,9 +1828,9 @@ export class CategoryIcon {
         const appsChanged = JSON.stringify(config.apps) !== JSON.stringify(this._config.apps);
         this._config = config;
         if (appsChanged) {
-            // Composite-Icon aktualisieren falls bereits erstellt
-            if (this._compositeIcon)
-                this._compositeIcon.update(config.apps);
+            // Composite-Icon neu rendern
+            if (this._baseIcon)
+                this._baseIcon._createIconTexture(this._baseIcon.iconSize);
             // App-Label neu setzen
             if (this._app) {
                 const newLabel = getCategoryLabel(config.apps);
@@ -1842,7 +1845,7 @@ export class CategoryIcon {
     destroy() {
         this._panel?.destroy();
         this._panel = null;
-        this._compositeIcon = null;
+        this._baseIcon = null;
         this._app?.destroy();
         this._app = null;
     }
@@ -1888,15 +1891,11 @@ export class CategoryIcon {
     }
 
     /**
-     * Gibt das CategoryCompositeIcon zurück (oder erstellt es).
-     * Wird von DockLocationAppIcon genutzt um das Icon zu rendern.
+     * Erstellt ein frisches CategoryCompositeIcon (kein Caching,
+     * da BaseIcon das vorherige Icon via destroy() entsorgt).
      */
-    getCompositeIcon(iconSize) {
-        if (!this._compositeIcon)
-            this._compositeIcon = new CategoryCompositeIcon(this._config.apps, iconSize);
-        else
-            this._compositeIcon.update(this._config.apps, iconSize);
-        return this._compositeIcon;
+    createCompositeIcon(iconSize) {
+        return new CategoryCompositeIcon(this._config.apps, iconSize);
     }
 
     /**
