@@ -1851,6 +1851,47 @@ export class DockManager {
     }
 
     /**
+     * Bereinigt user-categories: ungültige Einträge entfernen, Apps die gleichzeitig
+     * in favorite-apps stehen aus den Favoriten löschen (verhindert wilde Neuordnung).
+     * Gibt die bereinigten Configs zurück und schreibt sie bei Bedarf zurück.
+     */
+    _repairUserCategories(configs) {
+        const appSystem = Shell.AppSystem.get_default();
+
+        // Sanitize: ensure each entry has valid types
+        const cleaned = configs
+            .filter(c => c && typeof c.id === 'string' && Array.isArray(c.apps))
+            .map(c => ({
+                id: c.id,
+                apps: c.apps.filter(a => typeof a === 'string' && appSystem.lookup_app(a) !== null),
+                position: typeof c.position === 'number' ? c.position : -1,
+            }))
+            .filter(c => c.apps.length >= 2);
+
+        const configsChanged = JSON.stringify(cleaned) !== JSON.stringify(configs);
+        if (configsChanged)
+            this._writeUserCategories(cleaned);
+
+        // Remove from favorites any app that belongs to a category
+        const categorizedIds = new Set(cleaned.flatMap(c => c.apps));
+        if (categorizedIds.size > 0) {
+            const favs = AppFavorites.getAppFavorites();
+            const favMap = favs.getFavoriteMap();
+            let favChanged = false;
+            for (const appId of categorizedIds) {
+                if (appId in favMap) {
+                    favs.removeFavorite(appId);
+                    favChanged = true;
+                }
+            }
+            if (favChanged)
+                log('dash2dock: self-repair removed categorized apps from favorites');
+        }
+
+        return cleaned;
+    }
+
+    /**
      * Erstellt eine neue Kategorie mit zwei Apps an der angegebenen Dock-Position.
      * position = Anzahl regulärer (nicht-custom) Apps vor der neuen Kategorie.
      */
@@ -2000,6 +2041,9 @@ export class DockManager {
         } catch (_e) {}
         if (!Array.isArray(configs))
             configs = [];
+
+        // Self-repair: sanitize configs and remove cross-contamination with favorites
+        configs = this._repairUserCategories(configs);
 
         // Destroy surplus icons
         while (this._categoryIcons.length > configs.length)

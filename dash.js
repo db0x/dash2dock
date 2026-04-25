@@ -498,7 +498,7 @@ export const DockDash = GObject.registerClass({
                     const ca = clean[i].child?._delegate?.app;
                     if (ca && ca !== app && !ca.isCustom) favsBefore++;
                 }
-                if (favsBefore === favPos || favsBefore === favPos + 1) {
+                if (favsBefore === favPos) {
                     this._clearDragPlaceholder();
                     return DND.DragMotionResult.CONTINUE;
                 }
@@ -557,6 +557,17 @@ export const DockDash = GObject.registerClass({
         const isCustom = !!app.isCustom;
         const inCategoryId = source?._d2dInCategoryId ?? source?._delegate?._d2dInCategoryId;
         const dockManager = Docking.DockManager.getDefault();
+
+        // Laufende kategorisierte Apps sitzen immer direkt nach ihrem Category Icon –
+        // sie können im Dock nicht per D&D repositioniert werden.
+        if (!isCustom && !inCategoryId) {
+            const dragAppId = app.get_id?.();
+            if (dragAppId && (dockManager.getCategorizedAppIds?.() ?? new Set()).has(dragAppId)) {
+                this._clearDragPlaceholder();
+                this._clearDropTarget();
+                return false;
+            }
+        }
 
         // ── Drop auf Icon (Kategorie erstellen / erweitern / verschmelzen) ──
         if (this._dropTargetIcon) {
@@ -683,11 +694,17 @@ export const DockDash = GObject.registerClass({
                 return false;
             }
 
-            // Position = Anzahl regulärer (nicht-custom) Apps vor dem Placeholder
+            // Position = Anzahl der Favoriten vor dem Placeholder (nicht Running-Apps,
+            // damit die Position stabil bleibt wenn Apps starten/stoppen)
+            const favMapForPos = AppFavorites.getAppFavorites().getFavoriteMap();
+            for (const catId of (dockManager.getCategorizedAppIds?.() ?? new Set()))
+                delete favMapForPos[catId];
             let regAppsBefore = 0;
             for (let i = 0; i < phIdx; i++) {
                 const ca = children[i].child?._delegate?.app;
-                if (ca && !ca.isCustom) regAppsBefore++;
+                if (!ca || ca.isCustom) continue;
+                const cid = ca.get_id?.();
+                if (cid && cid in favMapForPos) regAppsBefore++;
             }
             configs[iconIdx].position = regAppsBefore;
 
@@ -1149,34 +1166,64 @@ export const DockDash = GObject.registerClass({
         const newApps = [];
 
         const {showFavorites} = settings;
+
+        // ── Phase 1: Favoriten ────────────────────────────────────────────
         if (showFavorites)
             newApps.push(...Object.values(favorites));
 
-        if (settings.showRunning) {
-            // We reorder the running apps so that they don't change position on the
-            // dash with every redisplay() call
+        // ── Phase 2: Category Icons ───────────────────────────────────────
+        // Werden VOR den Running-Apps eingefügt, damit ci.position nur Favoriten
+        // zählt – stabiler Ankerpunkt der sich nicht mit laufenden Apps verändert.
+        // Positioned icons in reverse so tiebreaker-order aus acceptDrop stimmt.
+        const ciPositioned = [];
+        const ciAppended = [];
+        for (const ci of dockManager.categoryIcons) {
+            if (!newApps.includes(ci.getApp())) {
+                if (ci.position >= 0)
+                    ciPositioned.push(ci);
+                else
+                    ciAppended.push(ci);
+            }
+        }
+        for (let k = ciPositioned.length - 1; k >= 0; k--) {
+            const ci = ciPositioned[k];
+            let regularCount = 0;
+            let insertIdx = newApps.length;
+            for (let i = 0; i < newApps.length; i++) {
+                if (regularCount === ci.position) { insertIdx = i; break; }
+                if (!newApps[i].isCustom) regularCount++;
+            }
+            newApps.splice(insertIdx, 0, ci.getApp());
+        }
+        for (const ci of ciAppended)
+            newApps.push(ci.getApp());
 
-            // First: add the apps from the oldApps list that are still running
+        // ── Phase 3: Laufende nicht-kategorisierte Apps ───────────────────
+        // Reihenfolge aus oldApps beibehalten, neue ans Ende.
+        const runningCat = []; // kategorisierte → Phase 5
+
+        if (settings.showRunning) {
             oldApps.forEach(oldApp => {
                 const index = running.indexOf(oldApp);
                 if (index > -1) {
                     const [app] = running.splice(index, 1);
                     const appId = app.get_id();
-                    if (!showFavorites || !(appId in favorites))
+                    if (categorizedAppIds.has(appId))
+                        runningCat.push(app);
+                    else if (!showFavorites || !(appId in favorites))
                         newApps.push(app);
                 }
             });
-
-            // Second: add the new apps
-            // Kategorisierte Apps werden hier bewusst NICHT gefiltert:
-            // läuft eine App aus einer Kategorie, erscheint sie temporär im Dock (less-click)
             running.forEach(app => {
                 const appId = app.get_id();
-                if (!showFavorites || !(appId in favorites))
+                if (categorizedAppIds.has(appId))
+                    runningCat.push(app);
+                else if (!showFavorites || !(appId in favorites))
                     newApps.push(app);
             });
         }
 
+        // ── Phase 4: Removables / Trash ───────────────────────────────────
         this._signalsHandler.removeWithLabel(Labels.SHOW_MOUNTS);
         if (dockManager.removables) {
             this._signalsHandler.addWithLabel(Labels.SHOW_MOUNTS,
@@ -1197,43 +1244,12 @@ export const DockDash = GObject.registerClass({
             oldApps = oldApps.filter(app => !app.isTrash);
         }
 
-        // ── Category Icons ──────────────────────────────────────────
-        // Split into icons with an explicit position and icons that are
-        // simply appended.  Positioned icons are inserted in *reverse*
-        // array order so that, when two icons share the same position
-        // value, each splice pushes the previous one right and the final
-        // visual order matches the array order (the tiebreaker written by
-        // acceptDrop).  Appended icons are pushed in forward array order.
-        const ciPositioned = [];
-        const ciAppended = [];
-        for (const ci of dockManager.categoryIcons) {
-            if (!newApps.includes(ci.getApp())) {
-                if (ci.position >= 0)
-                    ciPositioned.push(ci);
-                else
-                    ciAppended.push(ci);
-            }
+        // ── Phase 5: Laufende kategorisierte Apps – immer ganz am Ende ────
+        // Transient, kein Einfluss auf die Position anderer Icons.
+        for (const app of runningCat) {
+            if (!newApps.includes(app))
+                newApps.push(app);
         }
-
-        for (let k = ciPositioned.length - 1; k >= 0; k--) {
-            const ci = ciPositioned[k];
-            const regPos = ci.position;
-            let regularCount = 0;
-            let insertIdx = newApps.length;
-            for (let i = 0; i < newApps.length; i++) {
-                if (regularCount === regPos) {
-                    insertIdx = i;
-                    break;
-                }
-                if (!newApps[i].isCustom)
-                    regularCount++;
-            }
-            newApps.splice(insertIdx, 0, ci.getApp());
-        }
-
-        for (const ci of ciAppended)
-            newApps.push(ci.getApp());
-        // ───────────────────────────────────────────────────────────
 
         // Temporary remove the separator so that we don't compute to position icons
         const oldSeparatorPos = this._box.get_children().indexOf(this._separator);
@@ -1311,6 +1327,18 @@ export const DockDash = GObject.registerClass({
             } else {
                 removedActors.push(children[oldIndex]);
                 oldIndex++;
+            }
+        }
+
+        // Disable drag for transient running-categorized app icons
+        const runningCatSet = new Set(runningCat);
+        for (const {app, item} of addedItems) {
+            if (runningCatSet.has(app)) {
+                const icon = item.child?._delegate;
+                if (icon?._draggable) {
+                    icon._draggable.destroy?.();
+                    icon._draggable = null;
+                }
             }
         }
 

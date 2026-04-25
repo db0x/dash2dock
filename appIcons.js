@@ -440,7 +440,7 @@ export const DockAbstractAppIcon = GObject.registerClass({
     popupMenu() {
         this._removeMenuTimeout?.();
         this.fake_release();
-        this._draggable.fakeRelease?.();
+        this._draggable?.fakeRelease?.();
 
         if (!this._menu) {
             this._menu = new DockAppIconMenu(this);
@@ -972,6 +972,7 @@ const DockLocationAppIcon = GObject.registerClass({
 
         if (app._categoryIconInstance) {
             this._setupCompositeIcon(app._categoryIconInstance);
+            this.popupMenu = () => {};
         } else {
             if (Docking.DockManager.settings.isolateLocations) {
                 this._signalsHandler.add(tracker, 'notify::focus-app', () => this._updateFocusState());
