@@ -1374,8 +1374,12 @@ export function generateCategoryId() {
  */
 export function getCategoryLabel(appIds) {
     const appSystem = Shell.AppSystem.get_default();
-    return appIds.slice(0, 4)
-        .map(id => appSystem.lookup_app(id)?.get_name() ?? id)
+    return appIds
+        .map(id => appSystem.lookup_app(id))
+        .filter(a => a !== null)
+        .sort((a, b) => a.get_name().localeCompare(b.get_name()))
+        .slice(0, 4)
+        .map(a => a.get_name())
         .join(', ');
 }
 
@@ -1402,9 +1406,11 @@ class CategoryCompositeIcon extends St.Widget {
     _build() {
         this.destroy_all_children();
         const appSystem = Shell.AppSystem.get_default();
-        const apps = this._appIds.slice(0, 4)
+        const apps = this._appIds
             .map(id => appSystem.lookup_app(id))
-            .filter(a => a !== null);
+            .filter(a => a !== null)
+            .sort((a, b) => a.get_name().localeCompare(b.get_name()))
+            .slice(0, 4);
 
         if (apps.length === 0)
             return;

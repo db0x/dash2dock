@@ -1162,16 +1162,16 @@ export const DockDash = GObject.registerClass({
                 if (index > -1) {
                     const [app] = running.splice(index, 1);
                     const appId = app.get_id();
-                    if (categorizedAppIds.has(appId)) return; // in Kategorie → überspringen
                     if (!showFavorites || !(appId in favorites))
                         newApps.push(app);
                 }
             });
 
             // Second: add the new apps
+            // Kategorisierte Apps werden hier bewusst NICHT gefiltert:
+            // läuft eine App aus einer Kategorie, erscheint sie temporär im Dock (less-click)
             running.forEach(app => {
                 const appId = app.get_id();
-                if (categorizedAppIds.has(appId)) return; // in Kategorie → überspringen
                 if (!showFavorites || !(appId in favorites))
                     newApps.push(app);
             });
