@@ -1330,14 +1330,17 @@ export const DockDash = GObject.registerClass({
             }
         }
 
-        // Disable drag for transient running-categorized app icons
+        // Disable drag and mark as transient for running-categorized app icons
         const runningCatSet = new Set(runningCat);
         for (const {app, item} of addedItems) {
             if (runningCatSet.has(app)) {
                 const icon = item.child?._delegate;
-                if (icon?._draggable) {
-                    icon._draggable.destroy?.();
-                    icon._draggable = null;
+                if (icon) {
+                    icon._d2dIsTransient = true;
+                    if (icon._draggable) {
+                        icon._draggable.destroy?.();
+                        icon._draggable = null;
+                    }
                 }
             }
         }

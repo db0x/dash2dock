@@ -1190,6 +1190,8 @@ const DockAppIconMenu = class DockAppIconMenu extends PopupMenu.PopupMenu {
 
             const canFavorite = global.settings.is_writable('favorite-apps') &&
                 (this.sourceActor instanceof DockAppIcon) &&
+                !this.sourceActor._d2dInCategoryId &&
+                !this.sourceActor._d2dIsTransient &&
                 ParentalControlsManager.getDefault().shouldShowApp(app.appInfo);
 
             if (canFavorite) {
