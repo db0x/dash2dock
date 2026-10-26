@@ -409,6 +409,14 @@ export const DockDash = GObject.registerClass({
         this._magnifier = new Magnification.DockMagnifier(this, hoverActor);
     }
 
+    holdMagnification() {
+        this._magnifier?.hold();
+    }
+
+    releaseMagnification() {
+        this._magnifier?.release();
+    }
+
     _onDestroy() {
         this._magnifier?.destroy();
         delete this._magnifier;

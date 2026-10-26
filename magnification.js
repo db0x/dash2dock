@@ -17,7 +17,7 @@ import {
 } from './imports.js';
 
 // Time to fully grow the icons when the pointer enters the dock, and to
-// shrink them back once it leaves.
+// shrink them back once it leaves, at the default speed.
 const MAGNIFY_IN_TIME = 120;
 const MAGNIFY_OUT_TIME = 200;
 
@@ -81,6 +81,7 @@ export class DockMagnifier {
         this._target = 0;
         this._pointer = null;
         this._menuOpened = false;
+        this._holds = 0;
         this._dragging = false;
         this._backgroundBefore = 0;
         this._backgroundAfter = 0;
@@ -144,6 +145,7 @@ export class DockMagnifier {
             'changed::icon-magnification',
             () => {
                 this._reloadIcons();
+                this._updateStyle();
                 this._sync();
             },
         ], [
@@ -151,9 +153,19 @@ export class DockMagnifier {
             'changed::icon-magnification-scale',
             () => this._reloadIcons(),
         ]);
+
+        this._updateStyle();
+    }
+
+    _updateStyle() {
+        if (Docking.DockManager.settings.iconMagnification)
+            this._dash.add_style_class_name('magnification');
+        else
+            this._dash.remove_style_class_name('magnification');
     }
 
     destroy() {
+        this._dash.remove_style_class_name('magnification');
         this._signalsHandler.destroy();
         this._timeline?.stop();
         delete this._timeline;
@@ -161,12 +173,54 @@ export class DockMagnifier {
         for (const item of [...this._magnifiedItems.keys()])
             this._resetItem(item);
         this._setClipToView(true);
+        this._setMagnifying(false);
     }
 
     _reloadIcons() {
         // The icon textures depend on the magnification scale
         for (const item of this._getItems())
             item.child.icon?.update?.();
+    }
+
+    get _frozen() {
+        return this._menuOpened || this._holds > 0;
+    }
+
+    /**
+     * Keep the icons as they are, whatever the pointer does, until release()
+     * is called, e.g. while a popup that belongs to an icon is shown.
+     */
+    hold() {
+        this._holds++;
+    }
+
+    release() {
+        this._holds = Math.max(this._holds - 1, 0);
+        if (this._frozen)
+            return;
+
+        // The popup may still cover the dock, so its hover state can't be
+        // trusted: stay magnified only if the pointer is actually over it.
+        const pointer = global.get_pointer();
+        if (this._enabled && this._isPointerOnDock(pointer)) {
+            this._updatePointer(pointer);
+            this._setMagnifying(true);
+            this._animateTo(1);
+        } else {
+            this._animateTo(0);
+        }
+    }
+
+    _isPointerOnDock([x, y]) {
+        const contains = actor => {
+            const [ax, ay] = actor.get_transformed_position();
+            const [width, height] = actor.get_transformed_size();
+            return x >= ax && x < ax + width && y >= ay && y < ay + height;
+        };
+
+        // The magnified icons grow out of the dock
+        return contains(this._hoverActor) ||
+            [...this._magnifiedItems.keys()].some(item => contains(item.child));
     }
 
     get _enabled() {
@@ -189,8 +243,16 @@ export class DockMagnifier {
         const type = event.type();
         if (type === Clutter.EventType.MOTION || type === Clutter.EventType.ENTER) {
             this._updatePointer(event.get_coords());
-            if (this._intensity > 0)
+
+            // The hovered icon gets its hover state before the dock does, so
+            // start right away instead of waiting for the dock hover change,
+            // or the icon gets painted once with its highlight.
+            if (this._target !== 1 && !this._frozen && this._enabled) {
+                this._setMagnifying(true);
+                this._animateTo(1);
+            } else if (this._intensity > 0) {
                 this._update();
+            }
         }
 
         return Clutter.EVENT_PROPAGATE;
@@ -201,12 +263,16 @@ export class DockMagnifier {
     }
 
     _sync() {
-        if (this._menuOpened)
+        if (this._frozen)
             return;
 
         const active = this._enabled && this._hoverActor.hover;
-        if (active)
+        if (active) {
             this._updatePointer(global.get_pointer());
+            // Hide the highlights right away, before the hovered icon gets
+            // painted with them: the magnification only starts next frame.
+            this._setMagnifying(true);
+        }
 
         this._animateTo(active ? 1 : 0);
     }
@@ -223,7 +289,8 @@ export class DockMagnifier {
         if (from === target)
             return;
 
-        const fullTime = target > from ? MAGNIFY_IN_TIME : MAGNIFY_OUT_TIME;
+        const speed = Math.max(Docking.DockManager.settings.iconMagnificationSpeed, 0.1);
+        const fullTime = (target > from ? MAGNIFY_IN_TIME : MAGNIFY_OUT_TIME) / speed;
         const duration = Math.round(fullTime * Math.abs(target - from));
 
         if (!duration || !this._dash.mapped || !St.Settings.get().enable_animations) {
@@ -281,10 +348,16 @@ export class DockMagnifier {
         const [, slotSize] = this._getExtent(items[0]);
         const growth = (Math.max(settings.iconMagnificationScale, 1) - 1) * this._intensity;
         const range = Math.max(settings.iconMagnificationRange, 1) * slotSize;
+        const spread = Math.max(settings.iconMagnificationSpread, 0);
         const pointer = this._pointer;
-        const map = pos => pos + growth * range * bellIntegral((pos - pointer) / range);
+        // The icons size follows the magnification, while their positions
+        // are pushed aside according to the spread: at 1 they make exactly
+        // room for the grown icons, below they overlap, above gaps appear.
+        const sizeMap = pos => pos + growth * range * bellIntegral((pos - pointer) / range);
+        const map = pos => pos + spread * growth * range * bellIntegral((pos - pointer) / range);
 
         this._setClipToView(false);
+        this._setMagnifying(true);
 
         const magnifiedItems = new Set(items);
         for (const item of this._magnifiedItems.keys()) {
@@ -297,10 +370,8 @@ export class DockMagnifier {
             if (!size)
                 continue;
 
-            const newStart = map(start);
-            const newEnd = map(start + size);
-            const scale = (newEnd - newStart) / size;
-            const shift = (newStart + newEnd - 2 * start - size) / 2;
+            const scale = (sizeMap(start + size) - sizeMap(start)) / size;
+            const shift = (map(start) + map(start + size) - 2 * start - size) / 2;
 
             this._magnifyItem(item, scale, shift);
 
@@ -419,12 +490,13 @@ export class DockMagnifier {
             const base = this._backgroundBase;
             const start = this._isHorizontal ? dashX + base.x1 : dashY + base.y1;
             const end = this._isHorizontal ? dashX + base.x2 : dashY + base.y2;
-            before = Math.max(start - map(start), 0);
-            after = Math.max(map(end) - end, 0);
+            // Whole pixels only, so that the background borders and inset
+            // shadows aren't blurred by sub-pixel positions.
+            before = Math.max(Math.round(start - map(start)), 0);
+            after = Math.max(Math.round(map(end) - end), 0);
         }
 
-        if (Math.abs(before - this._backgroundBefore) < 0.01 &&
-            Math.abs(after - this._backgroundAfter) < 0.01)
+        if (before === this._backgroundBefore && after === this._backgroundAfter)
             return;
 
         this._backgroundBefore = before;
@@ -440,7 +512,13 @@ export class DockMagnifier {
         if (!this._backgroundBefore && !this._backgroundAfter)
             return;
 
+        // allocate() expects the box including the margins, that the
+        // allocation box has already removed.
         const box = this._backgroundBase.copy();
+        box.x1 -= background.margin_left;
+        box.y1 -= background.margin_top;
+        box.x2 += background.margin_right;
+        box.y2 += background.margin_bottom;
         if (this._isHorizontal) {
             box.x1 -= this._backgroundBefore;
             box.x2 += this._backgroundAfter;
@@ -481,5 +559,16 @@ export class DockMagnifier {
 
         this._updateBackground(null);
         this._setClipToView(true);
+        // Still unmagnified at the very start of the growing animation
+        this._setMagnifying(this._target === 1);
+    }
+
+    _setMagnifying(magnifying) {
+        // The magnified icon already stands out, hide the hover and focus
+        // highlights meanwhile.
+        if (magnifying)
+            this._dash.add_style_class_name('magnifying');
+        else
+            this._dash.remove_style_class_name('magnifying');
     }
 }

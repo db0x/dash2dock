@@ -788,6 +788,11 @@ export const DockAbstractAppIcon = GObject.registerClass({
         if (this._launchBounceClone)
             return;
 
+        // Category icons open their panel instead of launching anything,
+        // with the magnification on they keep standing out as they are.
+        if (this.app._categoryIconInstance && Docking.DockManager.settings.iconMagnification)
+            return;
+
         const iconActor = this.icon;
         const [width, height] = iconActor.get_transformed_size();
         if (!iconActor.get_stage() || !width || !height) {

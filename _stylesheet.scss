@@ -525,3 +525,20 @@ $dock_style_modes: null, shrink, extended, extended-shrink;
         background-size: contain;
     }
 }
+
+// No hover and focus highlights with the magnification on, the magnified icon
+// already stands out: the third id outweighs the per-position dock rules.
+#dashtodockContainer #dashtodockBox #dash.magnification .dash-item-container,
+#dashtodockContainer #dashtodockBox #dash.magnifying .dash-item-container {
+    .overview-tile,
+    .show-apps {
+        &, &:hover, &:focus, &:selected, &:checked, &:active, &.focused {
+            &, .overview-icon {
+                background-color: transparent;
+                background-image: none;
+                border-color: transparent;
+                box-shadow: none;
+            }
+        }
+    }
+}
