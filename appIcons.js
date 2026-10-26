@@ -30,6 +30,7 @@ import {
     DBusMenuUtils,
     Docking,
     Locations,
+    Magnification,
     Theming,
     Utils,
     WindowPreview,
@@ -255,6 +256,10 @@ export const DockAbstractAppIcon = GObject.registerClass({
 
         this._doubleClickGesture?.cancel();
         delete this._doubleClickGesture;
+    }
+
+    _createIcon(iconSize) {
+        return Magnification.createIcon(size => super._createIcon(size), iconSize);
     }
 
     ownsWindow(window) {
@@ -781,6 +786,11 @@ export const DockAbstractAppIcon = GObject.registerClass({
     // Main.uiGroup so it is not clipped by the dash scrollview.
     animateLaunch() {
         if (this._launchBounceClone)
+            return;
+
+        // Category icons open their panel instead of launching anything,
+        // with the magnification on they keep standing out as they are.
+        if (this.app._categoryIconInstance && Docking.DockManager.settings.iconMagnification)
             return;
 
         const iconActor = this.icon;
@@ -1622,7 +1632,7 @@ export const DockShowAppsIcon = GObject.registerClass({
     }
 
     _createIcon(size) {
-        this._iconActor = super._createIcon(size);
+        this._iconActor = Magnification.createIcon(s => super._createIcon(s), size);
         this._iconActor.fallbackIconName = this._iconActor.iconName;
         this._iconActor.fallbackGicon = this._iconActor.gicon;
         this._iconActor.iconName = `view-app-grid-${Main.sessionMode.currentMode}-symbolic`;
@@ -1761,7 +1771,27 @@ export function itemShowLabel() {
     this.label.opacity = 0;
     this.label.show();
 
-    const [stageX, stageY] = this.get_transformed_position();
+    const [x, y] = itemLabelPosition.call(this);
+
+    this.label.remove_all_transitions();
+    this.label.set_position(x, y);
+    this.label.ease({
+        opacity: 255,
+        duration: DASH_ITEM_LABEL_SHOW_TIME,
+        mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+    });
+    /* eslint-enable no-invalid-this */
+}
+
+/**
+ * Computes the label position of a dash item, next to its (possibly
+ * magnified) icon.
+ *
+ * @returns {number[]} The label stage coordinates
+ */
+export function itemLabelPosition() {
+    /* eslint-disable no-invalid-this */
+    let [stageX, stageY] = this.get_transformed_position();
     const node = this.label.get_theme_node();
 
     const itemWidth  = this.allocation.x2 - this.allocation.x1;
@@ -1774,6 +1804,19 @@ export function itemShowLabel() {
 
     const position = Utils.getPosition();
     const labelOffset = node.get_length('-x-offset');
+
+    // Follow the magnified icon: it's shifted along the dock and grows away
+    // from the screen edge.
+    if (this._magnification) {
+        const {shift, growth} = this._magnification;
+        if (position === St.Side.LEFT || position === St.Side.RIGHT) {
+            stageY += shift;
+            stageX += position === St.Side.LEFT ? growth : -growth;
+        } else {
+            stageX += shift;
+            stageY += position === St.Side.TOP ? growth : -growth;
+        }
+    }
 
     switch (position) {
     case St.Side.LEFT:
@@ -1812,12 +1855,6 @@ export function itemShowLabel() {
     else if (x + labelWidth > monitor.x + monitor.width - gap)
         x -= x + labelWidth - (monitor.x + monitor.width) + gap;
 
-    this.label.remove_all_transitions();
-    this.label.set_position(x, y);
-    this.label.ease({
-        opacity: 255,
-        duration: DASH_ITEM_LABEL_SHOW_TIME,
-        mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-    });
+    return [Math.round(x), Math.round(y)];
     /* eslint-enable no-invalid-this */
 }

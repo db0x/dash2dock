@@ -54,6 +54,8 @@ const {signals: Signals} = imports;
 const DOCK_DWELL_CHECK_INTERVAL = 100;
 const ICON_ANIMATOR_DURATION = 3000;
 const STARTUP_ANIMATION_TIME = 500;
+// Room left unclipped around the dock for magnified icons
+const MAGNIFICATION_OVERFLOW = 1000;
 
 export const State = Object.freeze({
     HIDDEN:  0,
@@ -183,8 +185,24 @@ const DashSlideContainer = GObject.registerClass({
 
         this.child.allocate(childBox);
 
-        this.child.set_clip(-childBox.x1, -childBox.y1,
-            -childBox.x1 + availWidth, -childBox.y1 + availHeight);
+        // Only the screen edge side has to be clipped for sliding, leave the
+        // other sides open so that magnified icons can grow out of the dock.
+        let left = -childBox.x1;
+        let top = -childBox.y1;
+        let right = left + availWidth;
+        let bottom = top + availHeight;
+        const overflow = MAGNIFICATION_OVERFLOW;
+
+        if (this.side !== St.Side.LEFT)
+            left -= overflow;
+        if (this.side !== St.Side.RIGHT)
+            right += overflow;
+        if (this.side !== St.Side.TOP)
+            top -= overflow;
+        if (this.side !== St.Side.BOTTOM)
+            bottom += overflow;
+
+        this.child.set_clip(left, top, right - left, bottom - top);
     }
 
     /**
@@ -420,6 +438,7 @@ const DockedDash = GObject.registerClass({
         this.set_child(this._slider);
         this._slider.set_child(this._box);
         this._box.add_child(this.dash);
+        this.dash.enableMagnification(this._box);
 
         // Delay operations that require the shell to be fully loaded and with
         // user theme applied.

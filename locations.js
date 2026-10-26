@@ -18,6 +18,7 @@ import {
 import {
     AppIcons,
     Docking,
+    Magnification,
     Theming,
     Utils,
 } from './imports.js';
@@ -1419,7 +1420,7 @@ class CategoryCompositeIcon extends St.Widget {
         this.set_size(size, size);
 
         if (apps.length === 1) {
-            this.add_child(apps[0].create_icon_texture(size));
+            this.add_child(Magnification.createIcon(s => apps[0].create_icon_texture(s), size));
             return;
         }
 
@@ -1432,7 +1433,8 @@ class CategoryCompositeIcon extends St.Widget {
             const row = new St.BoxLayout({vertical: false});
             row.style = 'spacing: 2px;';
             for (let i = r * 2; i < Math.min(r * 2 + 2, apps.length); i++) {
-                row.add_child(apps[i].create_icon_texture(subSize));
+                const app = apps[i];
+                row.add_child(Magnification.createIcon(s => app.create_icon_texture(s), subSize));
             }
             grid.add_child(row);
         }
@@ -1612,8 +1614,11 @@ class CategoryPanel {
 
         // Dock sichtbar halten solange Panel offen ist
         this._dash = Docking.DockManager.getDefault().mainDock?.dash;
-        if (this._dash)
+        if (this._dash) {
             this._dash.requiresVisibility = true;
+            // Welle stehen lassen solange das Panel offen ist
+            this._dash.holdMagnification();
+        }
 
         this._syncTheme();
 
@@ -1725,10 +1730,32 @@ class CategoryPanel {
         if (!this.actor || !this._sourceActor)
             return;
 
-        const [stageX, stageY] = this._sourceActor.get_transformed_position();
-        const iconW = this._sourceActor.get_width();
-        const iconH = this._sourceActor.get_height();
+        let [stageX, stageY] = this._sourceActor.get_transformed_position();
+        let iconW = this._sourceActor.get_width();
+        let iconH = this._sourceActor.get_height();
         const monitor = Main.layoutManager.findMonitorForActor(this._sourceActor);
+
+        // Vergrößertes Icon (Welle): verschoben und vom Bildschirmrand weg gewachsen
+        if (this._sourceActor._magnification) {
+            const {shift, growth} = this._sourceActor._magnification;
+            switch (this._position) {
+            case St.Side.LEFT:
+                stageY += shift;
+                iconW += growth;
+                break;
+            case St.Side.RIGHT:
+                stageY += shift;
+                stageX -= growth;
+                break;
+            case St.Side.TOP:
+                stageX += shift;
+                iconH += growth;
+                break;
+            default:
+                stageX += shift;
+                stageY -= growth;
+            }
+        }
         const [, , panelW, panelH] = this.actor.get_preferred_size();
 
         const gap = 6;
@@ -1775,6 +1802,7 @@ class CategoryPanel {
         // Dock wieder normal ausblenden lassen
         if (this._dash) {
             this._dash.requiresVisibility = false;
+            this._dash.releaseMagnification();
             this._dash = null;
         }
 
@@ -1804,6 +1832,11 @@ class CategoryPanel {
         if (this._overlay) {
             this._overlay.destroy();
             this._overlay = null;
+        }
+        if (this._dash) {
+            this._dash.requiresVisibility = false;
+            this._dash.releaseMagnification();
+            this._dash = null;
         }
         this.actor?.destroy();
         this.actor = null;

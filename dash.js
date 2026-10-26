@@ -25,6 +25,7 @@ import {
 import {
     AppIcons,
     Docking,
+    Magnification,
     Theming,
     Utils,
 } from './imports.js';
@@ -112,6 +113,47 @@ const DockDashIconsVerticalLayout = GObject.registerClass(
         }
     });
 
+// St.ScrollView limits its paint volume to its allocation, which would make
+// Clutter cull (when painting and picking) the magnified icons growing out of
+// the dock. The scrolled content is still clipped by the viewport itself.
+const DockDashScrollView = GObject.registerClass(
+class DockDashScrollView extends St.ScrollView {
+    vfunc_get_paint_volume(volume) {
+        if (!volume.set_from_allocation(this))
+            return false;
+
+        for (const child of this.get_children()) {
+            if (!child.visible)
+                continue;
+
+            const childVolume = child.get_transformed_paint_volume(this);
+            if (!childVolume)
+                return false;
+            volume.union(childVolume);
+        }
+
+        return true;
+    }
+});
+
+// St.Viewport clips picking to its content box whenever it's scrolled, even
+// with clip-to-view unset; skip that clip like painting does, so magnified
+// icons stay reactive out of the dock.
+const DockDashBoxContainer = GObject.registerClass(
+class DockDashBoxContainer extends St.BoxLayout {
+    vfunc_pick(pickContext) {
+        if (this.clip_to_view) {
+            super.vfunc_pick(pickContext);
+            return;
+        }
+
+        if (this.reactive)
+            this.pick_box(pickContext, new Clutter.ActorBox({x2: this.width, y2: this.height}));
+
+        for (const child of this.get_children())
+            child.pick(pickContext);
+    }
+});
 
 const baseIconSizes = [16, 22, 24, 32, 48, 64, 96, 128];
 
@@ -189,7 +231,7 @@ export const DockDash = GObject.registerClass({
             x_expand: !this._isHorizontal,
         });
 
-        this._scrollView = new St.ScrollView({
+        this._scrollView = new DockDashScrollView({
             name: 'dashtodockDashScrollview',
             hscrollbar_policy: this._isHorizontal ? St.PolicyType.EXTERNAL : St.PolicyType.NEVER,
             vscrollbar_policy: this._isHorizontal ?  St.PolicyType.NEVER : St.PolicyType.EXTERNAL,
@@ -200,7 +242,7 @@ export const DockDash = GObject.registerClass({
 
         this._scrollView.connect('scroll-event', this._onScrollEvent.bind(this));
 
-        this._boxContainer = new St.BoxLayout({
+        this._boxContainer = new DockDashBoxContainer({
             name: 'dashtodockBoxContainer',
             x_align: Clutter.ActorAlign.FILL,
             y_align: Clutter.ActorAlign.FILL,
@@ -353,11 +395,31 @@ export const DockDash = GObject.registerClass({
             return [minWidth, natWidth];
     }
 
+    vfunc_allocate(box) {
+        super.vfunc_allocate(box);
+        this._magnifier?.allocateBackground(this._background);
+    }
+
     get _container() {
         return this._dashContainer;
     }
 
+    enableMagnification(hoverActor) {
+        this._magnifier?.destroy();
+        this._magnifier = new Magnification.DockMagnifier(this, hoverActor);
+    }
+
+    holdMagnification() {
+        this._magnifier?.hold();
+    }
+
+    releaseMagnification() {
+        this._magnifier?.release();
+    }
+
     _onDestroy() {
+        this._magnifier?.destroy();
+        delete this._magnifier;
         this.iconAnimator.destroy();
 
         if (this._requiresVisibilityTimeout) {
