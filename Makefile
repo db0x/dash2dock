@@ -20,6 +20,7 @@ EXTRA_MODULES = \
                 launcherAPI.js \
                 locations.js \
                 locationsWorker.js \
+                magnification.js \
                 notificationsMonitor.js \
                 windowPreview.js \
                 intellihide.js \

@@ -650,5 +650,22 @@
       <summary>Dock icon order</summary>
       <description>Ordered list of app IDs and category IDs defining the persistent dock sequence</description>
     </key>
+    <key name="icon-magnification" type="b">
+      <default>true</default>
+      <summary>Magnify the icons under the pointer</summary>
+      <description>Enlarge the dock icons near the mouse pointer with a wave effect</description>
+    </key>
+    <key name="icon-magnification-scale" type="d">
+      <range min="1.0" max="3.0"/>
+      <default>2.0</default>
+      <summary>Magnification of the icon under the pointer</summary>
+      <description>Scale factor applied to the icon right under the mouse pointer</description>
+    </key>
+    <key name="icon-magnification-range" type="d">
+      <range min="1.0" max="6.0"/>
+      <default>3.0</default>
+      <summary>Width of the magnification wave</summary>
+      <description>Distance from the pointer, in icons, up to which the icons get magnified</description>
+    </key>
   </schema>
 </schemalist>

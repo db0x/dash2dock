@@ -18,6 +18,7 @@ import {
 import {
     AppIcons,
     Docking,
+    Magnification,
     Theming,
     Utils,
 } from './imports.js';
@@ -1419,7 +1420,7 @@ class CategoryCompositeIcon extends St.Widget {
         this.set_size(size, size);
 
         if (apps.length === 1) {
-            this.add_child(apps[0].create_icon_texture(size));
+            this.add_child(Magnification.createIcon(s => apps[0].create_icon_texture(s), size));
             return;
         }
 
@@ -1432,7 +1433,8 @@ class CategoryCompositeIcon extends St.Widget {
             const row = new St.BoxLayout({vertical: false});
             row.style = 'spacing: 2px;';
             for (let i = r * 2; i < Math.min(r * 2 + 2, apps.length); i++) {
-                row.add_child(apps[i].create_icon_texture(subSize));
+                const app = apps[i];
+                row.add_child(Magnification.createIcon(s => app.create_icon_texture(s), subSize));
             }
             grid.add_child(row);
         }
