@@ -289,7 +289,9 @@ export class DockMagnifier {
         if (from === target)
             return;
 
-        const speed = Math.max(Docking.DockManager.settings.iconMagnificationSpeed, 0.1);
+        const {settings} = Docking.DockManager;
+        const speed = Math.max(target > from
+            ? settings.iconMagnificationSpeed : settings.iconMagnificationOutSpeed, 0.1);
         const fullTime = (target > from ? MAGNIFY_IN_TIME : MAGNIFY_OUT_TIME) / speed;
         const duration = Math.round(fullTime * Math.abs(target - from));
 
