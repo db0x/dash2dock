@@ -9,6 +9,7 @@ export * as Main from 'resource:///org/gnome/shell/ui/main.js';
 export * as Overview from 'resource:///org/gnome/shell/ui/overview.js';
 export * as OverviewControls from 'resource:///org/gnome/shell/ui/overviewControls.js';
 export * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+export * as Search from 'resource:///org/gnome/shell/ui/search.js';
 export * as SearchController from 'resource:///org/gnome/shell/ui/searchController.js';
 export * as ShellMountOperation from 'resource:///org/gnome/shell/ui/shellMountOperation.js';
 export * as SwitcherPopup from 'resource:///org/gnome/shell/ui/switcherPopup.js';

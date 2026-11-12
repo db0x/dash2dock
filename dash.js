@@ -485,6 +485,10 @@ export const DockDash = GObject.registerClass({
         if (!app)
             return DND.DragMotionResult.NO_DROP;
 
+        // The search icon stays where it is
+        if (app.isSearch)
+            return DND.DragMotionResult.NO_DROP;
+
         const isCustom = !!app.isCustom;
         // App aus CategoryPanel (hat _d2dInCategoryId gesetzt)
         const inCategoryId = source?._d2dInCategoryId ?? source?._delegate?._d2dInCategoryId;
@@ -526,7 +530,7 @@ export const DockDash = GObject.registerClass({
 
             if (cursor >= start + margin && cursor <= start + size - margin) {
                 const childApp = clean[i].child?._delegate?.app;
-                if (!childApp || childApp === app) break;
+                if (!childApp || childApp === app || childApp.isSearch) break;
                 const childIsCustom = !!childApp.isCustom;
 
                 // Gültige Ziele:
@@ -569,6 +573,13 @@ export const DockDash = GObject.registerClass({
             }
         }
 
+        // Nothing gets in front of the search icon when it is the first one,
+        // nor behind it when it is the last one
+        if (insertPos === 0 && clean[0]?.child?._delegate?.app?.isSearch)
+            insertPos = 1;
+        else if (insertPos === clean.length && clean.at(-1)?.child?._delegate?.app?.isSearch)
+            insertPos = clean.length - 1;
+
         // Suppress placeholder when the item would stay at its current dock-order position.
         if (!inCategoryId) {
             const dockManager = Docking.DockManager.getDefault();
@@ -580,7 +591,7 @@ export const DockDash = GObject.registerClass({
                     let itemsBefore = 0;
                     for (let i = 0; i < insertPos; i++) {
                         const ca = clean[i].child?._delegate?.app;
-                        if (!ca || ca === app || ca._d2dIsTransient) continue;
+                        if (!ca || ca === app || ca._d2dIsTransient || ca.isSearch) continue;
                         itemsBefore++;
                     }
                     if (itemsBefore === currentOrderPos) {
@@ -642,6 +653,9 @@ export const DockDash = GObject.registerClass({
         if (!app)
             return false;
 
+        if (app.isSearch)
+            return false;
+
         const isCustom = !!app.isCustom;
         const inCategoryId = source?._d2dInCategoryId ?? source?._delegate?._d2dInCategoryId;
         const dockManager = Docking.DockManager.getDefault();
@@ -668,7 +682,7 @@ export const DockDash = GObject.registerClass({
             for (const child of allChildren) {
                 if (child === this._dropTargetIcon) break;
                 const ca = child.child?._delegate?.app;
-                if (ca && !ca._d2dIsTransient) dockInsertIdx++;
+                if (ca && !ca._d2dIsTransient && !ca.isSearch) dockInsertIdx++;
             }
             this._dropTargetIcon = null;
             this._clearDragPlaceholder();
@@ -732,7 +746,9 @@ export const DockDash = GObject.registerClass({
                 if (itemId) newDockOrder.push(itemId);
             } else {
                 const childApp = child.child?._delegate?.app;
-                if (!childApp || childApp === app || childApp._d2dIsTransient) continue;
+                if (!childApp || childApp === app || childApp._d2dIsTransient ||
+                    childApp.isSearch)
+                    continue;
                 const itemId = childApp.isCustom
                     ? childApp._categoryData?.id
                     : childApp.get_id?.();
@@ -1210,6 +1226,12 @@ export const DockDash = GObject.registerClass({
 
         const {showFavorites} = settings;
 
+        // ── Phase 0: the search icon, always the first or the last one ───
+        const searchApp = dockManager.searchIcon?.getApp();
+        const searchAtEnd = settings.searchPosition === 'end';
+        if (searchApp && !searchAtEnd)
+            newApps.push(searchApp);
+
         // ── Phase 1+2: Favoriten + Category Icons nach dock-order ────────
         // dock-order ist die einzige Autoritätsquelle für die persistente Reihenfolge.
         const dockOrder = dockManager.getDockOrder();
@@ -1299,6 +1321,9 @@ export const DockDash = GObject.registerClass({
             if (!newApps.includes(app))
                 newApps.push(app);
         }
+
+        if (searchApp && searchAtEnd)
+            newApps.push(searchApp);
 
         // Temporary remove the separator so that we don't compute to position icons
         const oldSeparatorPos = this._box.get_children().indexOf(this._separator);
@@ -1463,6 +1488,15 @@ export const DockDash = GObject.registerClass({
         }
         // ───────────────────────────────────────────────────────────────────
 
+        // The same for the search icon, on the main dock only
+        if (searchApp && this === dockManager.mainDock?.dash) {
+            const searchChild = this._box.get_children().find(actor =>
+                !removedActors.includes(actor) &&
+                actor.child?._delegate?.app === searchApp);
+            if (searchChild)
+                dockManager.searchIcon._sourceActor = searchChild;
+        }
+
         // This will update the size, and the corresponding number for each icon
         this._updateNumberOverlay();
 
@@ -1473,7 +1507,10 @@ export const DockDash = GObject.registerClass({
         const appIcons = this.getAppIcons();
         let counter = 1;
         appIcons.forEach(icon => {
-            if (counter < 10) {
+            if (icon.app?.isSearch) {
+                // Not reachable by the hotkeys, see activateApp()
+                icon.setNumberOverlay(-1);
+            } else if (counter < 10) {
                 icon.setNumberOverlay(counter);
                 counter++;
             } else if (counter === 10) {

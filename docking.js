@@ -1577,7 +1577,7 @@ const DockedDash = GObject.registerClass({
 
     activateApp(appIndex) {
         const children = this.dash._box.get_children().filter(
-            actor => !!actor.child?.app);
+            actor => !!actor.child?.app && !actor.child.app.isSearch);
 
         // Apps currently in the dash
         const apps = children.map(actor => actor.child);
@@ -1998,6 +1998,10 @@ export class DockManager {
         return this._categoryIcons ?? [];
     }
 
+    get searchIcon() {
+        return this._searchIcon;
+    }
+
     // ── User-Category Management ────────────────────────────────────────────
 
     // ── dock-order: single authoritative order list ─────────────────────────
@@ -2269,7 +2273,14 @@ export class DockManager {
     }
 
     _ensureLocations() {
-        const {showMounts, showTrash} = this.settings;
+        const {showMounts, showTrash, showSearch} = this.settings;
+
+        if (showSearch && !this._searchIcon) {
+            this._searchIcon = new Locations.SearchIcon(this._settings);
+        } else if (!showSearch && this._searchIcon) {
+            this._searchIcon.destroy();
+            this._searchIcon = null;
+        }
 
         if (showTrash || showMounts) {
             if (!this._fm1Client)
@@ -2481,6 +2492,17 @@ export class DockManager {
             this._settings,
             'changed::show-trash',
             () => this._ensureLocations(),
+        ], [
+            this._settings,
+            'changed::show-search',
+            () => {
+                this._ensureLocations();
+                DockManager.allDocks.forEach(dock => dock.dash._queueRedisplay());
+            },
+        ], [
+            this._settings,
+            'changed::search-position',
+            () => DockManager.allDocks.forEach(dock => dock.dash._queueRedisplay()),
         ], [
             this._settings,
             'changed::show-mounts',
@@ -3147,6 +3169,8 @@ export class DockManager {
         this._appSpread.destroy();
         this._trash?.destroy();
         this._trash = null;
+        this._searchIcon?.destroy();
+        this._searchIcon = null;
         this._categoryIcons?.forEach(ci => ci.destroy());
         this._categoryIcons = [];
         Locations.unWrapFileManagerApp();

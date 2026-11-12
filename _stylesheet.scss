@@ -542,3 +542,21 @@ $dock_style_modes: null, shrink, extended, extended-shrink;
         }
     }
 }
+
+// The search panel opened by the search icon: an entry over the results of
+// the shell search.
+#dashtodockContainer #dash .d2d-search-panel {
+    padding: 8px;
+    spacing: 8px;
+
+    // The panel is the frame of the entry: no border, in any state
+    .d2d-search-entry {
+        &, &:hover, &:focus {
+            width: auto;
+            margin: 0;
+            border: none;
+            box-shadow: none;
+            outline: none;
+        }
+    }
+}

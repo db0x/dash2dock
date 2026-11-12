@@ -184,6 +184,10 @@ msgstr "Papierkorb"
 msgid "Empty Trash"
 msgstr "Papierkorb leeren"
 
+#: locations.js
+msgid "Search"
+msgstr "Suche"
+
 #: locations.js:1049
 #, javascript-format
 msgid "Failed to launch “%s”"
@@ -403,6 +407,26 @@ msgid "Put <i>Show Applications</i> in a dock edge when using Panel mode"
 msgstr ""
 "<i>Anwendungen anzeigen</i> in einen Dock-Rand setzen, wenn der Panel-Modus "
 "verwendet wird"
+
+#: Settings.ui
+msgid "Show search icon"
+msgstr "Such-Icon anzeigen"
+
+#: Settings.ui
+msgid "Position of the search icon"
+msgstr "Position des Such-Icons"
+
+#: Settings.ui
+msgid "Left (start)"
+msgstr "Links (Anfang)"
+
+#: Settings.ui
+msgid "Right (end)"
+msgstr "Rechts (Ende)"
+
+#: prefs.js
+msgid "Icon of the search icon"
+msgstr "Icon des Such-Icons"
 
 #: Settings.ui.h:54
 msgid "Show trash can"

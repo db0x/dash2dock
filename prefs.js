@@ -410,6 +410,25 @@ const DockSettings = GObject.registerClass({
         this._builder.get_object('note_about_fixed_size_icon').set_visible(!sensitive);
     }
 
+    /**
+     * The name of the search icon, with a preview of it: an Adw.EntryRow
+     * right below the search row, a GtkEntry in a list row is not editable.
+     */
+    _addSearchIconRow() {
+        const searchRow = this._builder.get_object('listboxrow_show_search');
+        const row = new Adw.EntryRow({title: __('Icon of the search icon')});
+        const preview = new Gtk.Image({pixel_size: 32});
+        row.add_suffix(preview);
+
+        const updatePreview = () => (preview.icon_name = row.text || 'gnome-search-tool');
+        row.connect('notify::text', updatePreview);
+        this._settings.bind('search-icon', row, 'text', Gio.SettingsBindFlags.DEFAULT);
+        this._settings.bind('show-search', row, 'sensitive', Gio.SettingsBindFlags.GET);
+        updatePreview();
+
+        searchRow.get_parent().insert(row, searchRow.get_index() + 1);
+    }
+
     _bindSettings() {
         // Position and size panel
 
@@ -723,6 +742,18 @@ const DockSettings = GObject.registerClass({
             this._builder.get_object('show_favorite_switch'),
             'active',
             Gio.SettingsBindFlags.DEFAULT);
+        this._settings.bind('show-search',
+            this._builder.get_object('show_search_switch'),
+            'active',
+            Gio.SettingsBindFlags.DEFAULT);
+        this._settings.bind('search-position',
+            this._builder.get_object('search_position_combo'),
+            'active-id',
+            Gio.SettingsBindFlags.DEFAULT);
+        ['search_position_combo', 'search_position_label'].forEach(id =>
+            this._settings.bind('show-search', this._builder.get_object(id),
+                'sensitive', Gio.SettingsBindFlags.GET));
+        this._addSearchIconRow();
         this._settings.bind('show-trash',
             this._builder.get_object('show_trash_switch'),
             'active',

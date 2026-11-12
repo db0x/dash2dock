@@ -12,6 +12,7 @@ import {
 
 import {
     Main,
+    Search,
     ShellMountOperation,
 } from './dependencies/shell/ui.js';
 
@@ -33,6 +34,7 @@ const {signals: Signals} = imports;
 
 const FALLBACK_REMOVABLE_MEDIA_ICON = 'drive-removable-media';
 const FALLBACK_TRASH_ICON = 'user-trash';
+const FALLBACK_SEARCH_ICON = 'system-search-symbolic';
 const FILE_MANAGER_DESKTOP_APP_ID = 'org.gnome.Nautilus.desktop';
 const ATTRIBUTE_METADATA_CUSTOM_ICON = 'metadata::custom-icon';
 const TRASH_URI = 'trash://';
@@ -1949,6 +1951,420 @@ export class CategoryIcon {
         }
 
         this._panel = new CategoryPanel(sourceActor, this._config, () => {
+            this._panel = null;
+        });
+        this._panel.open();
+    }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Search Icon ───────────────────────────────────────────────────────────────
+
+// Width of the search panel and maximum height of its results, in logical
+// pixels
+const SEARCH_PANEL_WIDTH = 640;
+const SEARCH_RESULTS_HEIGHT = 420;
+
+/**
+ * The search results of the shell overview: same providers, same widgets.
+ * The shell never destroys its own view, so it leaves the handlers on the
+ * global objects connected: they must do nothing once our view is gone.
+ */
+const DockSearchResultsView = GObject.registerClass(
+class DockSearchResultsView extends Search.SearchResultsView {
+    _init() {
+        super._init();
+        this.connect('destroy', () => {
+            this._d2dDestroyed = true;
+            this._clearSearchTimeout();
+            this._cancellable.cancel();
+        });
+    }
+
+    _reloadRemoteProviders() {
+        if (!this._d2dDestroyed)
+            super._reloadRemoteProviders();
+    }
+
+    // The results shown as icons (the apps) get the size of the dock icons
+    // instead of the one of the overview
+    _ensureProviderDisplay(provider) {
+        const isNew = !provider.display;
+        super._ensureProviderDisplay(provider);
+
+        const {display} = provider;
+        if (!isNew || !(display instanceof Search.GridSearchResults))
+            return;
+
+        const addItem = display._addItem;
+        display._addItem = item => {
+            if (this.iconSize)
+                item.icon?.setIconSize?.(this.iconSize);
+            addItem.call(display, item);
+        };
+    }
+
+    // Results of a search still running when the view got destroyed
+    _updateResults(...args) {
+        if (!this._d2dDestroyed)
+            super._updateResults(...args);
+    }
+});
+
+/**
+ * Splits the search text into terms, like the shell search controller does.
+ *
+ * @param {string} searchString - the text of the search entry
+ */
+function getTermsForSearchString(searchString) {
+    searchString = searchString.trim();
+    return searchString === '' ? [] : searchString.split(/\s+/);
+}
+
+/**
+ * A panel growing out of the search icon, holding a search entry and (once
+ * something is typed) the results of the standard GNOME search.
+ */
+class SearchPanel extends CategoryPanel {
+    constructor(sourceActor, onClose) {
+        super(sourceActor, null, onClose);
+    }
+
+    // Called by the parent constructor to fill the panel
+    _buildGrid() {
+        const monitor = Main.layoutManager.findMonitorForActor(this._sourceActor) ??
+            Main.layoutManager.primaryMonitor;
+        const {scaleFactor} = St.ThemeContext.get_for_stage(global.stage);
+        const width = Math.min(SEARCH_PANEL_WIDTH,
+            Math.floor((monitor.width - 64) / scaleFactor));
+        const height = Math.min(SEARCH_RESULTS_HEIGHT,
+            Math.floor((monitor.height - 240) / scaleFactor));
+
+        this._content = new St.BoxLayout({
+            style_class: 'd2d-search-panel',
+            style: `width: ${width}px;`,
+            vertical: true,
+        });
+
+        this._entry = new St.Entry({
+            style_class: 'search-entry d2d-search-entry',
+            // Translated by the shell, as in the overview
+            hint_text: _('Type to search'),
+            track_hover: true,
+            can_focus: true,
+            x_expand: true,
+        });
+        this._entry.set_primary_icon(new St.Icon({
+            style_class: 'search-entry-icon',
+            icon_name: 'edit-find-symbolic',
+        }));
+        this._clearIcon = new St.Icon({
+            style_class: 'search-entry-icon',
+            icon_name: 'edit-clear-symbolic',
+        });
+        this._entry.connect('secondary-icon-clicked', () => this._entry.set_text(''));
+
+        this._results = new DockSearchResultsView();
+        this._results.iconSize = this._iconSize;
+        // As high as its content, up to a limit: beyond that it scrolls
+        this._results.set_style(`max-height: ${height}px;`);
+        this._results.hide();
+
+        this._text = this._entry.clutter_text;
+        this._text.connect('text-changed', () => this._onTextChanged());
+        this._text.connect('key-press-event', (_actor, event) => this._onKeyPress(event));
+        this._text.connect('key-focus-in', () => this._results.highlightDefault(true));
+
+        this._content.add_child(this._entry);
+        this._content.add_child(this._results);
+        this._boxContainer.add_child(this._content);
+
+        // The panel follows the height of the results, staying on the icon
+        this.actor.connect('notify::allocation', () => {
+            if (this.isOpen)
+                this._reposition();
+        });
+
+        // Escape closes the panel also when a result has the key focus
+        this.actor.connect('key-press-event', (_actor, event) => {
+            if (event.get_key_symbol() !== Clutter.KEY_Escape)
+                return Clutter.EVENT_PROPAGATE;
+            this.close();
+            return Clutter.EVENT_STOP;
+        });
+
+        // While the panel is modal, the clicks outside of it land here too
+        this.actor.connect('button-press-event', (_actor, event) => {
+            const [x, y] = event.get_coords();
+            const [ok, localX, localY] = this.actor.transform_stage_point(x, y);
+            if (ok && localX >= 0 && localX <= this.actor.width &&
+                localY >= 0 && localY <= this.actor.height)
+                return Clutter.EVENT_PROPAGATE;
+            this.close();
+            return Clutter.EVENT_STOP;
+        });
+    }
+
+    _onTextChanged() {
+        const terms = getTermsForSearchString(this._entry.get_text());
+        const searching = terms.length > 0;
+
+        this._results.setTerms(terms);
+        this._entry.set_secondary_icon(searching ? this._clearIcon : null);
+
+        if (this._results.visible === searching)
+            return;
+
+        this._results.visible = searching;
+        this._reposition();
+    }
+
+    _onKeyPress(event) {
+        const symbol = event.get_key_symbol();
+
+        if (symbol === Clutter.KEY_Escape) {
+            if (this._entry.get_text() === '')
+                this.close();
+            else
+                this._entry.set_text('');
+            return Clutter.EVENT_STOP;
+        }
+
+        if (!this._results.visible)
+            return Clutter.EVENT_PROPAGATE;
+
+        const rtl = this._entry.get_text_direction() === Clutter.TextDirection.RTL;
+        const arrowNext = rtl ? Clutter.KEY_Left : Clutter.KEY_Right;
+
+        switch (symbol) {
+        case Clutter.KEY_Tab:
+            this._results.navigateFocus(St.DirectionType.TAB_FORWARD);
+            return Clutter.EVENT_STOP;
+        case Clutter.KEY_ISO_Left_Tab:
+            this._results.navigateFocus(St.DirectionType.TAB_BACKWARD);
+            return Clutter.EVENT_STOP;
+        case Clutter.KEY_Down:
+            this._results.navigateFocus(St.DirectionType.DOWN);
+            return Clutter.EVENT_STOP;
+        case arrowNext:
+            if (this._text.cursor_position !== -1)
+                return Clutter.EVENT_PROPAGATE;
+            this._results.navigateFocus(
+                rtl ? St.DirectionType.LEFT : St.DirectionType.RIGHT);
+            return Clutter.EVENT_STOP;
+        case Clutter.KEY_Return:
+        case Clutter.KEY_KP_Enter:
+            this._results.activateDefault();
+            return Clutter.EVENT_STOP;
+        }
+
+        return Clutter.EVENT_PROPAGATE;
+    }
+
+    _syncTheme() {
+        super._syncTheme();
+
+        // The dock keeps a margin to the screen edge and pads its icons
+        // along the dock: the panel has its own, even padding instead
+        const style = this._background.get_style() ?? '';
+        this._background.set_style(`${style} margin: 0;`);
+        this._dashContainer.set_style('padding: 0;');
+    }
+
+    _reposition() {
+        if (!this.actor || !this._sourceActor)
+            return;
+
+        // The panel grows and shrinks with its results: undo the size the
+        // parent class freezes while opening
+        this.actor.set_size(-1, -1);
+        super._reposition();
+
+        const monitor = Main.layoutManager.findMonitorForActor(this._sourceActor);
+        if (!monitor)
+            return;
+        const workArea = Main.layoutManager.getWorkAreaForMonitor(monitor.index);
+        const [, , width, height] = this.actor.get_preferred_size();
+        const gap = 6;
+        let [x, y] = this.actor.get_position();
+
+        if (this._position === St.Side.LEFT || this._position === St.Side.RIGHT) {
+            // With its results the panel is large: along the dock it stays
+            // inside the work area, not to cover the top bar
+            y = Math.max(workArea.y + gap,
+                Math.min(y, workArea.y + workArea.height - height - gap));
+        } else {
+            // On a horizontal dock the panel starts at the icon and sits
+            // right on it, as it is drawn: magnified and moved by the wave
+            const baseIcon = this._sourceActor.child?.icon;
+            const icon = baseIcon?.icon ?? baseIcon ?? this._sourceActor;
+            const [iconX, iconY] = icon.get_transformed_position();
+            const [iconWidth, iconHeight] = icon.get_transformed_size();
+            // As the last icon of the dock, it ends at the icon instead
+            const rtl = this.actor.get_text_direction() === Clutter.TextDirection.RTL;
+            const atEnd = Docking.DockManager.settings.searchPosition === 'end';
+
+            x = rtl !== atEnd ? iconX + iconWidth - width : iconX;
+            y = this._position === St.Side.TOP
+                ? iconY + iconHeight + gap
+                : iconY - height - gap;
+            x = Math.max(workArea.x + gap,
+                Math.min(x, workArea.x + workArea.width - width - gap));
+        }
+        this.actor.set_position(Math.round(x), Math.round(y));
+    }
+
+    open() {
+        super.open();
+
+        // The entry gets the keyboard only while the shell holds a grab
+        const grab = Main.pushModal(this.actor, {actionMode: Shell.ActionMode.POPUP});
+        if (!(grab.get_seat_state() & Clutter.GrabState.KEYBOARD)) {
+            Main.popModal(grab);
+            this.close();
+            return;
+        }
+        this._grab = grab;
+
+        // The search results leave the overview once activated, via toggle()
+        // or hide(): with the panel open that means closing the panel.
+        // Not before the click opening the panel is done: the dock icon
+        // ends its own activation hiding the overview.
+        this._overviewInjectionsId = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            this._overviewInjectionsId = 0;
+            this._overviewInjections = ['toggle', 'hide'].map(name => {
+                const descriptor = Object.getOwnPropertyDescriptor(Main.overview, name);
+                Main.overview[name] = () => this.close();
+                return {name, descriptor};
+            });
+            return GLib.SOURCE_REMOVE;
+        });
+        this._overviewShowingId = Main.overview.connect('showing', () => this.close());
+
+        this._entry.grab_key_focus();
+    }
+
+    _releaseModal() {
+        if (this._overviewShowingId) {
+            Main.overview.disconnect(this._overviewShowingId);
+            this._overviewShowingId = 0;
+        }
+
+        if (this._overviewInjectionsId) {
+            GLib.source_remove(this._overviewInjectionsId);
+            this._overviewInjectionsId = 0;
+        }
+
+        this._overviewInjections?.forEach(({name, descriptor}) => {
+            if (descriptor)
+                Object.defineProperty(Main.overview, name, descriptor);
+            else
+                delete Main.overview[name];
+        });
+        this._overviewInjections = null;
+
+        if (this._grab) {
+            Main.popModal(this._grab);
+            this._grab = null;
+        }
+    }
+
+    close() {
+        if (!this.isOpen)
+            return;
+
+        this._releaseModal();
+        super.close();
+    }
+
+    destroy() {
+        this._releaseModal();
+        super.destroy();
+    }
+}
+
+/**
+ * Keeps the Shell.App of the search icon: activating it opens a panel with
+ * a search entry using the standard GNOME search.
+ */
+export class SearchIcon {
+    constructor(settings) {
+        this._settings = settings;
+        this._iconChangedId = settings.connect('changed::search-icon', () => {
+            if (this._app)
+                this._app.appInfo.icon = this._createIcon();
+        });
+    }
+
+    // The icon chosen in the settings, else the first standard search icon
+    // the theme has
+    _createIcon() {
+        const names = ['gnome-search-tool', 'system-search', 'edit-find',
+            FALLBACK_SEARCH_ICON];
+        const name = this._settings.get_string('search-icon').trim();
+        if (name)
+            names.unshift(name);
+        return Gio.ThemedIcon.new_from_names(names);
+    }
+
+    destroy() {
+        if (this._iconChangedId) {
+            this._settings.disconnect(this._iconChangedId);
+            this._iconChangedId = 0;
+        }
+        this._panel?.destroy();
+        this._panel = null;
+        this._sourceActor = null;
+        this._app?.destroy();
+        this._app = null;
+    }
+
+    _ensureApp() {
+        if (this._app)
+            return;
+
+        const appInfo = new LocationAppInfo({
+            name: __('Search'),
+            icon: this._createIcon(),
+            cancellable: new Gio.Cancellable(),
+        });
+
+        this._app = makeLocationApp({
+            appInfo,
+            fallbackIconName: FALLBACK_SEARCH_ICON,
+        });
+
+        this._app._setDtdData({isSearch: true}, {getter: true, enumerable: true});
+        this._app._mi('can_open_new_window', () => false);
+        this._app._mi('open_new_window', () => {});
+        this._app._mi('activate', () => this.togglePanel());
+    }
+
+    getApp() {
+        this._ensureApp();
+        return this._app;
+    }
+
+    /**
+     * Opens or closes the search panel. In the overview there is already
+     * a search entry, so that one gets the focus instead.
+     */
+    togglePanel() {
+        if (this._panel) {
+            this._panel.close();
+            this._panel = null;
+            return;
+        }
+
+        if (Main.overview.visible) {
+            Main.overview.focusSearch();
+            return;
+        }
+
+        if (!this._sourceActor)
+            return;
+
+        this._panel = new SearchPanel(this._sourceActor, () => {
             this._panel = null;
         });
         this._panel.open();

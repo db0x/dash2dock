@@ -790,7 +790,8 @@ export const DockAbstractAppIcon = GObject.registerClass({
 
         // Category icons open their panel instead of launching anything,
         // with the magnification on they keep standing out as they are.
-        if (this.app._categoryIconInstance && Docking.DockManager.settings.iconMagnification)
+        if ((this.app._categoryIconInstance || this.app.isSearch) &&
+            Docking.DockManager.settings.iconMagnification)
             return;
 
         const iconActor = this.icon;
@@ -1166,6 +1167,12 @@ const DockLocationAppIcon = GObject.registerClass({
         if (app._categoryIconInstance) {
             this._setupCompositeIcon(app._categoryIconInstance);
             this.popupMenu = () => {};
+        } else if (app.isSearch) {
+            // Neither a menu nor a drag: the search icon stays where it is
+            this.popupMenu = () => {};
+            this._signalsHandler.add(this.app, 'notify::icon', () => this.icon.update());
+            if (this._draggable)
+                this._draggable.startDrag = () => {};
         } else {
             if (Docking.DockManager.settings.isolateLocations) {
                 const {windowTracker} = Docking.DockManager;

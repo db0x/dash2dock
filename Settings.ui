@@ -1374,6 +1374,71 @@
                       </object>
                     </child>
                     <child>
+                      <object class="GtkListBoxRow" id="listboxrow_show_search">
+                        <property name="child">
+                          <object class="GtkGrid" id="show_search_grid">
+                            <property name="can_focus">0</property>
+                            <property name="margin_start">12</property>
+                            <property name="margin_end">12</property>
+                            <property name="margin_top">12</property>
+                            <property name="margin_bottom">12</property>
+                            <property name="column_spacing">32</property>
+                            <child>
+                              <object class="GtkSwitch" id="show_search_switch">
+                                <property name="halign">end</property>
+                                <property name="valign">center</property>
+                                <layout>
+                                  <property name="column">1</property>
+                                  <property name="row">0</property>
+                                </layout>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkLabel" id="show_search_label">
+                                <property name="can_focus">0</property>
+                                <property name="hexpand">1</property>
+                                <property name="halign">start</property>
+                                <property name="label" translatable="yes">Show search icon</property>
+                                <layout>
+                                  <property name="column">0</property>
+                                  <property name="row">0</property>
+                                </layout>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkLabel" id="search_position_label">
+                                <property name="can_focus">0</property>
+                                <property name="hexpand">1</property>
+                                <property name="halign">start</property>
+                                <property name="margin_top">12</property>
+                                <property name="label" translatable="yes">Position of the search icon</property>
+                                <layout>
+                                  <property name="column">0</property>
+                                  <property name="row">1</property>
+                                </layout>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkComboBoxText" id="search_position_combo">
+                                <property name="can_focus">0</property>
+                                <property name="halign">end</property>
+                                <property name="valign">center</property>
+                                <property name="margin_top">12</property>
+                                <items>
+                                  <item id="start" translatable="yes">Left (start)</item>
+                                  <item id="end" translatable="yes">Right (end)</item>
+                                </items>
+                                <layout>
+                                  <property name="column">1</property>
+                                  <property name="row">1</property>
+                                </layout>
+                              </object>
+                            </child>
+                          </object>
+                        </property>
+                      </object>
+                    </child>
+                    <child>
                       <object class="GtkListBoxRow" id="listboxrow18">
                         <property name="child">
                           <object class="GtkGrid" id="shrink_dash4">

@@ -256,6 +256,21 @@
       <summary>Show favorites apps</summary>
       <description>Show or hide favorite applications icons in the dash</description>
     </key>
+    <key type="b" name="show-search">
+      <default>true</default>
+      <summary>Show search icon</summary>
+      <description>Show or hide the search icon at the start of the dash, opening a panel with a search entry</description>
+    </key>
+    <key type="s" name="search-position">
+      <default>'start'</default>
+      <summary>Position of the search icon</summary>
+      <description>Whether the search icon is the first (left or top) or the last (right or bottom) icon of the dash: 'start' or 'end'</description>
+    </key>
+    <key type="s" name="search-icon">
+      <default>'gnome-search-tool'</default>
+      <summary>Icon of the search icon</summary>
+      <description>Name of the themed icon used for the search icon, falling back to the standard search icons if the theme has none</description>
+    </key>
     <key type="b" name="show-trash">
       <default>true</default>
       <summary>Show trash can</summary>
